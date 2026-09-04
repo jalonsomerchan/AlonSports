@@ -14,7 +14,7 @@ La diferencia principal con una experiencia premium no está en añadir más tar
 registrar datos → entender la carga → decidir qué entrenar → planificar → comprobar progreso
 ```
 
-Hoy la app cubre sobre todo **registrar / consultar**. Falta convertir los datos en decisiones y continuidad de entrenamiento.
+Hoy la app cubre **registrar / consultar** y ya empieza a convertir los datos en decisiones mediante la vista Progreso. El siguiente salto es llevar ese contexto al dashboard y profundizar el análisis de cada actividad.
 
 ## Qué ya existe
 
@@ -28,20 +28,25 @@ Hoy la app cubre sobre todo **registrar / consultar**. Falta convertir los datos
 - Sincronización manual con Strava.
 - Perfil, preferencias y cierre de sesión.
 - Enlace público de actividad con ocultación del inicio del recorrido.
+- Vista Progreso conectada a carga, fitness, fatiga, forma, objetivos, calendario y sesiones planificadas.
+- Creación y borrado de sesiones planificadas desde la PWA, con objetivos semanales, mensuales y anuales.
+- Pantalla de Gráficos de actividad conectada a streams reales, con selector de métrica y resumen mínimo/máximo/media.
+- Pantalla Estadísticas con totales históricos, evolución mensual, distribución por deporte, récords e insights semanales.
+- Comparación de dos actividades con selección de salidas, streams alineados y diferencias de rendimiento.
+- Menú “Más” accesible desde escritorio y móvil, con accesos a Progreso, Estadísticas y Comparar actividades.
 
 ## Gaps prioritarios
 
 | Prioridad | Área | Falta hoy | Base disponible | Resultado premium esperado |
 | --- | --- | --- | --- | --- |
-| P0 | Carga y estado físico | No hay una vista real de `Fitness & Freshness`, fatiga, forma, carga semanal ni rango recomendado. El anillo del dashboard muestra `74%` fijo. | `/statistics`, `/analysis`, `/training-load`; datos de pulso/esfuerzo en actividad. | Un resumen que responda “¿cómo estoy?” y “¿cuánto puedo apretar esta semana?”. |
-| P0 | Objetivos y calendario | No se pueden crear ni seguir objetivos de distancia, tiempo, desnivel o actividades; tampoco hay calendario de descanso, enfermedad o entrenamientos planificados. | `/goals`, `/calendar`, `/planned-workouts`. | Progreso visible, rachas, objetivos con fecha y próxima sesión clara. |
-| P0 | Análisis profundo de actividad | La pestaña Gráficos solo muestra el mapa y un mensaje; no pinta streams interactivos de ritmo, pulso, altitud, cadencia o potencia. | `streams`, `laps`, `zones`, `achievements`, `milestones`; `/compare`. | Gráficos con tooltip, zoom, zonas, parciales, GAP y comparación contra PR/otra actividad. |
-| P0 | Progreso histórico | El dashboard resume el volumen, pero no hay una vista dedicada de estadísticas, récords, mejores esfuerzos, tendencias por deporte ni comparación mensual. | `/statistics`, `/analysis`. | Una sección “Progreso” que convierta meses de datos en una historia entendible. |
+| P0 | Carga y estado físico | La vista Progreso ya muestra carga, fitness, fatiga, forma, descanso y una lectura explicable. Falta llevar ese estado al dashboard y sustituir allí el anillo fijo `74%`. | `/statistics`, `/analysis`, `/training-load`; datos de pulso/esfuerzo en actividad. | Un resumen que responda “¿cómo estoy?” y “¿cuánto puedo apretar esta semana?”. |
+| P0 | Análisis profundo de actividad | La pestaña Gráficos ya pinta los streams disponibles de ritmo, pulso, altitud, cadencia o potencia. Faltan interacción avanzada, laps, zonas, GAP y comparación contra otra actividad. | `streams`, `laps`, `zones`, `achievements`, `milestones`; `/compare`. | Gráficos con tooltip, zoom, zonas, parciales, GAP y comparación contra PR/otra actividad. |
+| P0 | Progreso histórico | Ya existe la pantalla `/app/statistics` con totales, evolución mensual, distribución por deporte, récords e insights. Faltan filtros por periodo/deporte y comparación mensual más rica. | `/statistics`, `/analysis`. | Una sección “Progreso” que convierta meses de datos en una historia entendible. |
 | P1 | Rutas | No hay listado, creador completo, waypoints, detalle, exportación GPX/TCX, rutas sugeridas, heatmap personal ni mapas offline. | `/routes`, `/maps/routes/{routeId}`, `/heatmap`, `/matched-routes`. | Descubrir, guardar, preparar y reutilizar recorridos antes de salir. |
 | P1 | Segmentos competitivos | Los segmentos propios funcionan en modo básico, pero faltan editar, borrar, recalcular, objetivos, grupos, orden, segmentos de Strava, favoritos, exploración por mapa y leaderboards filtrables. | `/segments/{id}` PUT/DELETE/recalculate/goal, `/segment-groups`, `/strava/segments`, `/strava/segments/explore`. | Pasar de “mis tramos” a un ecosistema de competición y mejora continua. |
 | P1 | Edición y diario de actividad | No hay experiencia UI para nombre, etiquetas, notas, esfuerzo percibido, molestias, tipo de sesión, compañeros, meteorología, refresco desde Strava, borrado, recorte, división o unión. | `/activities/{id}`, `/labels`, `/notes`, `/weather`, `/refresh`, `/crop`, `/split`, `/merge`. | Poder corregir, contextualizar y aprender de cada salida sin salir de la actividad. |
-| P1 | Entrenamiento guiado | No hay planes, sesiones estructuradas, bloques, intensidad ni una acción de “enviar al dispositivo”. | `/planned-workouts`; la API define bloques e intensidad. | La app deja de ser solo un diario y acompaña el siguiente entrenamiento. |
-| P1 | Comparación de recorridos | No existe una pantalla explícita para matched activities ni comparar dos actividades con sus streams alineados. | `/matched-routes`, `/compare?one=&two=`. | Ver dónde se ganó o perdió tiempo en el mismo recorrido. |
+| P1 | Entrenamiento guiado | Ya se pueden planificar y borrar sesiones básicas con fecha, duración e intensidad. Faltan planes, bloques estructurados y una acción de “enviar al dispositivo”. | `/planned-workouts`; la API define bloques e intensidad. | La app deja de ser solo un diario y acompaña el siguiente entrenamiento. |
+| P1 | Comparación de recorridos | Ya existe `/app/compare` para comparar dos actividades y sus streams de velocidad. Falta el emparejamiento automático de rutas y una alineación espacial más precisa. | `/matched-routes`, `/compare?one=&two=`. | Ver dónde se ganó o perdió tiempo en el mismo recorrido. |
 | P2 | Grabación y seguridad | La PWA no ofrece grabación GPS en directo, datos de rendimiento en tiempo real, Beacon ni flujo de emergencia. | `/recordings` permite guardar una actividad grabada; el resto requiere producto/integración adicional. | Cubrir el antes, durante y después de la actividad. |
 | P2 | Comunidad y motivación | No hay feed, seguidores, kudos, clubes ni retos de grupo. | No se observan endpoints equivalentes en el contrato disponible; compartir actividad sí existe. | Añadir accountability social sin convertir el producto en una red social completa de entrada. |
 | P2 | Offline y sincronización | Existe service worker, pero no una política completa de caché, sesión offline, cola de mutaciones, progreso de sincronización ni recuperación de reintentos. | Notas de integración y `POST /activities/sync`. | La experiencia es fiable en móvil y con mala cobertura. |
@@ -50,24 +55,27 @@ Hoy la app cubre sobre todo **registrar / consultar**. Falta convertir los datos
 
 ### 1. Dashboard premium / “Progreso"
 
-Sustituir el indicador fijo del dashboard por datos calculados y explicables:
+La nueva vista `/app/progress` ya integra datos calculados y explicables:
 
 - carga de entrenamiento de la semana y de las últimas 6–8 semanas;
 - esfuerzo relativo basado en pulso o percepción de esfuerzo;
 - estado de fitness, fatiga y frescura;
-- comparación contra la media de 3 semanas;
 - objetivos activos y porcentaje completado;
-- próxima sesión planificada y recomendación sencilla de recuperación;
-- filtros por deporte, periodo y unidad;
-- estados sin datos, datos insuficientes y última sincronización.
+- próximas sesiones planificadas y recomendación sencilla de recuperación;
+- calendario de 14 días con actividad y planificación;
+- estados sin datos, carga insuficiente y errores accionables.
 
-**Criterio de terminado:** el usuario puede abrir el dashboard y entender su carga actual, su tendencia, su objetivo y la siguiente acción sin interpretar varias gráficas por su cuenta.
+**Pendiente residual:** sustituir el anillo fijo del dashboard por un resumen de esta vista y añadir filtros por deporte, periodo y unidad.
 
 ### 2. Análisis de actividad que justifique el producto
 
-La pestaña `Gráficos` debería mostrar, según los streams existentes:
+La pestaña `Gráficos` ya muestra, según los streams existentes:
 
-- ritmo/velocidad, frecuencia cardíaca, altitud, cadencia y potencia;
+- ritmo/velocidad, frecuencia cardíaca, altitud, cadencia y potencia, con selector y resumen de media, mínimo y máximo;
+- una serie SVG alineada con la distancia recorrida;
+
+Queda por añadir:
+
 - selección de series y escalas sincronizadas con la posición del mapa;
 - laps y parciales de 1 km/500 m cuando existan;
 - zonas de pulso, ritmo y potencia;
@@ -80,18 +88,40 @@ La pestaña `Gráficos` debería mostrar, según los streams existentes:
 
 ### 3. Objetivos, calendario y plan
 
-Crear una navegación de primer nivel “Progreso” o “Plan” con:
+La navegación de primer nivel “Progreso” ya permite:
 
-- objetivos semanales, mensuales y anuales por deporte;
-- objetivos de distancia, tiempo, desnivel, número de actividades y segmentos;
-- calendario mensual con actividad realizada, descanso, lesión, viaje y sesión planificada;
-- creación de entrenamientos con bloques, duración, distancia e intensidad;
-- progreso acumulado y previsión de cumplimiento;
-- recordatorios y estados de objetivo alcanzado, retrasado o pausado.
+- objetivos semanales, mensuales y anuales de distancia, tiempo, desnivel y actividades;
+- progreso acumulado de los objetivos en curso;
+- calendario de actividad y sesiones planificadas;
+- creación de sesiones con fecha, duración e intensidad;
+- eliminación de sesiones con actualización inmediata.
 
-**Criterio de terminado:** el usuario puede definir un objetivo, ver qué le falta y planificar la sesión que le acerca a él.
+**Pendiente residual:** añadir marcas de descanso/lesión/viaje en la PWA, recordatorios, estados pausado/retrasado y bloques detallados.
 
-### 4. Rutas y exploración
+### 4. Estadísticas históricas
+
+La pantalla `/app/statistics` ya convierte la respuesta de `/statistics` y `/analysis` en:
+
+- totales acumulados de distancia, tiempo, desnivel y velocidad máxima;
+- evolución mensual de distancia;
+- distribución de volumen por deporte;
+- récords personales enlazados con su actividad;
+- insights semanales y detalle tabular de los últimos meses.
+
+**Pendiente residual:** filtros por periodo y deporte, comparación contra el periodo anterior y mejores esfuerzos con más granularidad.
+
+### 5. Comparación de actividades
+
+La pantalla `/app/compare` ya permite seleccionar dos salidas, intercambiarlas y consultar:
+
+- streams de velocidad alineados por índice de recorrido;
+- distancia, tiempo, velocidad media y desnivel de ambas salidas;
+- diferencia porcentual de distancia y velocidad;
+- leyenda diferenciada y estados vacíos o de error.
+
+**Pendiente residual:** matched activities automáticas, alineación por distancia/GPS y comparación de laps, pulso y desnivel.
+
+### 6. Rutas y exploración
 
 La vista de mapas debería crecer desde “ver mi recorrido” hacia “preparar mi próxima salida”:
 
@@ -106,7 +136,7 @@ La vista de mapas debería crecer desde “ver mi recorrido” hacia “preparar
 
 **Importante:** el editor de segmentos actual usa una ruta de ejemplo para la previsualización. Debe seleccionar puntos sobre el mapa real de la actividad antes de considerarse una experiencia premium.
 
-### 5. Segmentos al nivel de Strava
+### 7. Segmentos al nivel de Strava
 
 - ranking personal con PR, última marca y objetivo;
 - comparación entre esfuerzos de dos fechas;
@@ -117,7 +147,7 @@ La vista de mapas debería crecer desde “ver mi recorrido” hacia “preparar
 - edición, borrado y recalculado con confirmación y feedback de progreso;
 - live segment únicamente si se incorpora grabación/dispositivo compatible.
 
-### 6. Edición, privacidad y confianza
+### 8. Edición, privacidad y confianza
 
 - editar nombre, deporte, etiquetas, notas, esfuerzo percibido y tipo de entrenamiento;
 - mostrar meteorología y permitir corregirla;
@@ -133,9 +163,11 @@ La vista de mapas debería crecer desde “ver mi recorrido” hacia “preparar
 
 1. Tipar los contratos (`contracts.ts` / OpenAPI) y normalizar estados de carga y error.
 2. Integrar `/statistics`, `/analysis` y `/training-load`.
-3. Rehacer el dashboard con carga real, objetivos y última sincronización.
+3. Integrar en el dashboard el estado real de `/app/progress`, objetivos y última sincronización.
 4. Construir gráficos de streams, zonas, laps y comparación.
-5. Añadir objetivos básicos y calendario.
+5. ~~Añadir objetivos básicos y calendario.~~ Hecho en `/app/progress`; quedan los estados y recordatorios avanzados.
+6. ~~Crear una pantalla histórica de estadísticas.~~ Hecho en `/app/statistics`; quedan filtros y comparativas avanzadas.
+7. ~~Crear comparación explícita de actividades.~~ Hecho en `/app/compare`; quedan matched routes y alineación avanzada.
 
 ### Fase 2 — mejorar la exploración
 

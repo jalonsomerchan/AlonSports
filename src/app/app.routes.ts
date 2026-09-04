@@ -1,6 +1,9 @@
 import { Routes } from '@angular/router';
 import { ActivitiesPage, ActivityPage, AppShell, DashboardPage, ImportPage, LiveActivitiesPage, LiveActivityPage, LiveDashboardPage, LiveSegmentsPage, LoginPage, SegmentDetailPage, SegmentEditorPage, SegmentsPage, SettingsPage, SharePage } from './app';
 import { ProgressPage } from './progress';
+import { StatisticsPage } from './statistics';
+import { ComparePage } from './compare';
+import { MorePage } from './more';
 import { authGuard } from './auth.guard';
 
 export const routes: Routes = [
@@ -10,6 +13,9 @@ export const routes: Routes = [
     { path: 'progress', component: ProgressPage },
     { path: 'activities', component: LiveActivitiesPage },
     { path: 'activity/:id/share', component: SharePage },
+    { path: 'statistics', component: StatisticsPage },
+    { path: 'compare', component: ComparePage },
+    { path: 'more', component: MorePage },
     { path: 'activity/:id/:section', component: LiveActivityPage },
     { path: 'activity/:id', redirectTo: 'activity/:id/overview', pathMatch: 'full' },
     { path: 'segments/new', component: SegmentEditorPage },
