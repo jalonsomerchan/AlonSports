@@ -1,3 +1,5 @@
-/* You can add global styles to this file, and also import other style files */
-
 @import 'tailwindcss';
+@import 'leaflet/dist/leaflet.css';
+
+html, body { margin: 0; min-height: 100%; background: #10130f; }
+body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }

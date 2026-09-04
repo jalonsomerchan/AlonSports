@@ -1,0 +1,11 @@
+{
+  "name": "Alon Sports",
+  "short_name": "Alon Sports",
+  "description": "Tu entrenamiento, más claro.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#10130f",
+  "theme_color": "#10130f",
+  "lang": "es",
+  "icons": [{ "src": "favicon.ico", "sizes": "any", "type": "image/x-icon" }]
+}
