@@ -3,7 +3,7 @@ import { ActivitiesPage, ActivityPage, AppShell, DashboardPage, ImportPage, Live
 import { ProgressPage } from './progress';
 import { StatisticsPage } from './statistics';
 import { ComparePage } from './compare';
-import { MorePage } from './more';
+import { MorePage, RouteDetailPage, RoutesPage } from './more';
 import { authGuard } from './auth.guard';
 
 export const routes: Routes = [
@@ -16,6 +16,8 @@ export const routes: Routes = [
     { path: 'statistics', component: StatisticsPage },
     { path: 'compare', component: ComparePage },
     { path: 'more', component: MorePage },
+    { path: 'routes/:id', component: RouteDetailPage },
+    { path: 'routes', component: RoutesPage },
     { path: 'activity/:id/:section', component: LiveActivityPage },
     { path: 'activity/:id', redirectTo: 'activity/:id/overview', pathMatch: 'full' },
     { path: 'segments/new', component: SegmentEditorPage },

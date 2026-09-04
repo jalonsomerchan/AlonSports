@@ -32,3 +32,7 @@ Publica el contenido generado en `dist/alonsports/browser` y configura el custom
 - Compartir actividad con enlace público, privacidad y caducidad.
 
 La integración y las ampliaciones recomendadas de API están anotadas en [API_NOTES.md](API_NOTES.md).
+
+## Regla de gráficas
+
+Todas las gráficas de datos de la PWA deben implementarse con Chart.js sobre `<canvas>`. No se deben dibujar gráficas manualmente con SVG, rutas geométricas o barras CSS; los componentes reutilizables están en `src/app/chart-components.ts`.

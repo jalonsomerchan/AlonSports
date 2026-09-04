@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
 import { ApiService } from './app';
+import { TrainingLoadChart } from './chart-components';
 
 interface LoadPoint { day: string; load: number; fitness: number; fatigue: number; form: number; freshness?: number; }
 interface Goal { id?: number | string; period_type?: string; sport_type?: string | null; metric?: string; target?: number; period_start?: string; period_end?: string; }
@@ -11,7 +12,7 @@ interface CalendarActivity { id: number | string; start_date_local?: string; dis
 
 @Component({
   selector: 'app-progress',
-  imports: [RouterLink, FormsModule, MatIconModule],
+  imports: [RouterLink, FormsModule, MatIconModule, TrainingLoadChart],
   template: `
     <section class="page progress-page">
       <div class="back-row"><a routerLink="/app/dashboard"><mat-icon>arrow_back</mat-icon> Resumen</a><span class="api-badge">DATOS REALES</span></div>
@@ -35,7 +36,7 @@ interface CalendarActivity { id: number | string; start_date_local?: string; dis
         <article class="chart-card load-chart-card">
           <div class="card-heading"><div><span class="eyebrow">FITNESS & FRESHNESS · 6 SEMANAS</span><h2>Carga en perspectiva</h2></div><span class="chart-method">{{ method() }}</span></div>
           @if (series().length) {
-            <svg class="load-chart" viewBox="0 0 600 190" role="img" aria-label="Evolución de carga, fitness y fatiga"><path class="load-area" [attr.d]="areaPath()"/><path class="load-line" [attr.d]="linePath('load')"/><path class="fitness-line" [attr.d]="linePath('fitness')"/><path class="fatigue-line" [attr.d]="linePath('fatigue')"/></svg>
+            <app-training-load-chart [series]="series()" />
             <div class="chart-legend"><span><i class="legend-load"></i>Carga diaria</span><span><i class="legend-fitness"></i>Fitness</span><span><i class="legend-fatigue"></i>Fatiga</span></div>
           } @else { <div class="empty-state">Aún no hay suficientes actividades para dibujar la carga.</div> }
         </article>
@@ -94,9 +95,6 @@ export class ProgressPage {
   statusLabel() { const form = Number(this.current()?.form ?? 0); return form > 5 ? 'Fresco para apretar' : form < -5 ? 'Toca recuperar' : 'Listo para entrenar'; }
   statusTone() { const form = Number(this.current()?.form ?? 0); return form < -5 ? 'warning' : form > 5 ? 'fresh' : 'neutral'; }
   statusText() { const ratio = Number(this.load()?.['ratio']); if (ratio > 1.5) return 'La carga reciente está muy por encima de tu base. Prioriza una sesión fácil o descanso.'; if (Number(this.current()?.form ?? 0) > 5) return 'Tu fatiga está controlada respecto a tu fitness. Es un buen momento para una sesión de calidad.'; return 'La carga está dentro de un rango razonable. Alterna estímulo y recuperación para seguir progresando.'; }
-  linePath(metric: 'load' | 'fitness' | 'fatigue') { return this.path(this.series().map(point => Number(point[metric] ?? 0))); }
-  areaPath() { const points = this.series().map(point => Number(point.load ?? 0)); return `${this.path(points)} L 600 190 L 0 190 Z`; }
-  path(values: number[]) { if (!values.length) return ''; const max = Math.max(...values, 1); const min = Math.min(...values, 0); const span = max - min || 1; return values.map((value, index) => `${index ? 'L' : 'M'} ${(index / Math.max(values.length - 1, 1) * 600).toFixed(1)} ${(176 - ((value - min) / span) * 150).toFixed(1)}`).join(' '); }
   number(value: unknown) { const number = Number(value); return Number.isFinite(number) ? number.toFixed(1) : '—'; }
   signed(value: unknown) { const number = Number(value); return Number.isFinite(number) ? `${number > 0 ? '+' : ''}${number.toFixed(1)}` : '—'; }
   goalLabel(goal: Goal) { return ({ distance: 'Distancia', time: 'Tiempo', elevation: 'Desnivel', activities: 'Actividades' } as Record<string, string>)[goal.metric ?? 'distance'] ?? 'Objetivo'; }
