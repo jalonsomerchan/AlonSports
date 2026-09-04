@@ -24,20 +24,22 @@ export const SEGMENTS: Segment[] = [
 const DEFAULT_ROUTE: L.LatLngExpression[] = [[40.4143, -3.6996], [40.4137, -3.6978], [40.4148, -3.6959], [40.4164, -3.6945], [40.4172, -3.6921], [40.4187, -3.6902], [40.4204, -3.6891]];
 
 export interface ApiUser { id: number | string; firstname: string; lastname?: string; username?: string; city?: string; country?: string; profile_url?: string; scopes?: string; last_sync_at?: string; strava_connected?: boolean; }
-export interface ApiSession { authenticated: boolean; user: ApiUser | null; csrf_token: string; }
+export interface ApiPreferences { language?: string; distance_unit?: string; elevation_unit?: string; temperature_unit?: string; week_starts_on?: number; theme?: string; }
+export interface ApiSession { authenticated: boolean; user: ApiUser | null; preferences?: ApiPreferences; csrf_token: string; }
 export interface ApiDashboard { user?: ApiUser; stats?: { total?: number; distance?: number; moving_time?: number; elevation?: number }; trend?: unknown[]; activities?: unknown[]; }
 export interface ApiActivities { activities: unknown[]; count: number; }
 export interface ApiSegments { segments?: unknown[]; groups?: unknown[]; strava_segments?: unknown[]; }
 export interface StravaAuthorization { authorization_url: string; }
+export const API_BASE_URL = 'https://alon.one/sports/api/v1';
 
 @Injectable({ providedIn: 'root' })
 export class CsrfStore { readonly token = signal(''); set(token: string) { this.token.set(token || ''); } clear() { this.token.set(''); } }
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
-  private readonly http = inject(HttpClient); readonly baseUrl = 'https://alon.one/sports/api/v1';
+  private readonly http = inject(HttpClient); readonly baseUrl = API_BASE_URL;
   session() { return this.http.get<ApiSession>(`${this.baseUrl}/auth/session`); }
-  csrfToken() { return this.http.get<{ csrf_token: string }>(`${this.baseUrl}/auth/csrf`); }
+  csrfToken() { return this.http.get<ApiSession>(`${this.baseUrl}/auth/csrf`); }
   stravaAuthorization() { return this.http.get<StravaAuthorization>(`${this.baseUrl}/auth/strava`); }
   dashboard() { return this.http.get<ApiDashboard>(`${this.baseUrl}/dashboard`); }
   activities(limit = 100) { return this.http.get<ApiActivities>(`${this.baseUrl}/activities?limit=${limit}`); }
@@ -51,10 +53,12 @@ export class ApiService {
 export class AuthStore {
   readonly status = signal<'loading' | 'authenticated' | 'anonymous'>('loading'); readonly authenticated = computed(() => this.status() === 'authenticated'); readonly user = signal<ApiUser | null>(null); readonly error = signal('');
   private init$?: Observable<boolean>; private readonly api = inject(ApiService); private readonly csrf = inject(CsrfStore);
-  initialize() { if (!this.init$) this.init$ = this.api.session().pipe(tap(session => this.applySession(session)), map(session => session.authenticated), catchError(() => { this.status.set('anonymous'); this.user.set(null); return of(false); }), shareReplay(1)); return this.init$; }
+  initialize(force = false) { if (force) this.init$ = undefined; if (!this.init$) this.init$ = this.api.session().pipe(tap(session => this.applySession(session)), map(session => session.authenticated), catchError(() => { this.status.set('anonymous'); this.user.set(null); return of(false); }), shareReplay(1)); return this.init$; }
+  refreshSession() { return this.initialize(true); }
   private applySession(session: ApiSession) { this.csrf.set(session.csrf_token); this.user.set(session.user); this.status.set(session.authenticated ? 'authenticated' : 'anonymous'); }
-  loginWithStrava() { this.error.set(''); this.api.stravaAuthorization().subscribe({ next: response => { if (typeof window !== 'undefined') window.location.assign(response.authorization_url); }, error: () => this.error.set('No se ha podido iniciar la conexión con Strava.') }); }
-  logout() { this.api.mutation<{ ok: boolean }>('post', '/auth/logout').pipe(catchError(() => of({ ok: false }))).subscribe(() => { this.csrf.clear(); this.user.set(null); this.status.set('anonymous'); }); }
+  setError(message: string) { this.error.set(message); }
+  loginWithStrava() { this.error.set(''); this.api.stravaAuthorization().subscribe({ next: response => { if (response.authorization_url && typeof window !== 'undefined') window.location.assign(response.authorization_url); else this.error.set('La API no ha devuelto una URL válida de Strava.'); }, error: () => this.error.set('No se ha podido iniciar la conexión con Strava.') }); }
+  logout() { this.init$ = undefined; this.user.set(null); this.status.set('anonymous'); this.api.mutation<{ ok: boolean }>('post', '/auth/logout').pipe(catchError(() => of({ ok: false }))).subscribe(() => this.csrf.clear()); }
 }
 
 @Injectable({ providedIn: 'root' })
@@ -78,11 +82,29 @@ export class App { constructor() { if (typeof window !== 'undefined' && 'service
   <main class="login-page"><div class="login-grid"></div><section class="login-card">
     <div class="brand-lockup"><span class="brand-mark">A</span><span>ALON <em>SPORTS</em></span></div>
     <div class="login-intro"><p class="eyebrow">TU ENTRENAMIENTO, MÁS CLARO</p><h1>Vuelve a<br /><span>moverte.</span></h1><p class="login-copy">Analiza tus salidas, sigue tus segmentos y encuentra tu próximo pequeño récord.</p></div>
-    <div class="api-login-note"><mat-icon>lock</mat-icon><span>Acceso seguro mediante la cuenta de Strava. La API mantiene la sesión en una cookie HttpOnly.</span></div><button class="primary-button login-submit" type="button" (click)="submit()">Continuar con Strava <mat-icon>arrow_forward</mat-icon></button>
+    <div class="api-login-note"><mat-icon>lock</mat-icon><span>Acceso seguro mediante la cuenta de Strava. La API mantiene la sesión en una cookie HttpOnly.</span></div>@if (error()) { <p class="api-error" role="alert">{{ error() }}</p> }<button class="primary-button login-submit" type="button" (click)="submit()">Continuar con Strava <mat-icon>arrow_forward</mat-icon></button>
     <div class="login-divider"><span>OAuth seguro</span></div><button class="strava-button" type="button" (click)="submit()"><span class="strava-dot">S</span> Conectar con Strava</button><p class="login-foot">Al continuar aceptas sincronizar tus actividades con Alon Sports.</p>
   </section><aside class="login-aside"><p class="eyebrow">PRÓXIMA SALIDA</p><p class="aside-quote">“La constancia<br /><strong>se mide en días.</strong>”</p><div class="aside-route"><span>Madrid · 06:42</span><span>08.5 km</span></div><div class="route-line"><i></i><i></i><i></i><i></i></div></aside></main>
 `, changeDetection: ChangeDetectionStrategy.OnPush })
-export class LoginPage { private readonly auth = inject(AuthStore); submit() { this.auth.loginWithStrava(); } }
+export class LoginPage {
+  private readonly auth = inject(AuthStore); private readonly route = inject(ActivatedRoute); private readonly router = inject(Router); readonly error = this.auth.error;
+  constructor() {
+    const result = this.route.snapshot.queryParamMap.get('auth');
+    if (result === 'error') {
+      this.auth.setError(this.route.snapshot.queryParamMap.get('message') ?? 'No se ha podido completar la conexión con Strava.');
+      this.router.navigateByUrl('/login', { replaceUrl: true });
+    } else if (result === 'success') {
+      this.auth.refreshSession().subscribe(authenticated => {
+        if (authenticated) this.router.navigateByUrl('/app/dashboard', { replaceUrl: true });
+        else {
+          this.auth.setError('Strava se conectó, pero no se ha podido recuperar la sesión.');
+          this.router.navigateByUrl('/login', { replaceUrl: true });
+        }
+      });
+    }
+  }
+  submit() { this.auth.loginWithStrava(); }
+}
 
 @Component({ selector: 'app-shell', imports: [RouterOutlet, RouterLink, RouterLinkActive, MatIconModule], template: `
   <div class="app-frame"><aside class="side-nav"><a class="brand-lockup side-brand" routerLink="/app/dashboard"><span class="brand-mark">A</span><span>ALON <em>SPORTS</em></span></a><nav class="main-nav" aria-label="Principal"><a routerLink="/app/dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}"><mat-icon>dashboard</mat-icon><span>Resumen</span></a><a routerLink="/app/activities" routerLinkActive="active"><mat-icon>directions_run</mat-icon><span>Actividades</span></a><a routerLink="/app/segments" routerLinkActive="active"><mat-icon>route</mat-icon><span>Segmentos</span></a><a routerLink="/app/import" routerLinkActive="active"><mat-icon>add_circle</mat-icon><span>Importar</span></a></nav><div class="side-bottom"><a routerLink="/app/settings" routerLinkActive="active"><mat-icon>settings</mat-icon><span>Configuración</span></a><button class="profile-mini" routerLink="/app/settings"><span class="avatar">JA</span><span><strong>Jorge Alonso</strong><small>Ver perfil</small></span><mat-icon>more_horiz</mat-icon></button></div></aside><main class="content-column"><header class="mobile-header"><a class="brand-lockup" routerLink="/app/dashboard"><span class="brand-mark">A</span><span>ALON <em>SPORTS</em></span></a><button class="icon-button" routerLink="/app/settings"><span class="avatar small">JA</span></button></header><router-outlet /></main><nav class="bottom-nav" aria-label="Navegación móvil"><a routerLink="/app/dashboard" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}"><mat-icon>dashboard</mat-icon><span>Resumen</span></a><a routerLink="/app/activities" routerLinkActive="active"><mat-icon>directions_run</mat-icon><span>Salidas</span></a><a routerLink="/app/segments" routerLinkActive="active"><mat-icon>route</mat-icon><span>Segmentos</span></a><a routerLink="/app/settings" routerLinkActive="active"><mat-icon>person</mat-icon><span>Perfil</span></a></nav></div>

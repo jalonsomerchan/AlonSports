@@ -17,6 +17,6 @@ export const routes: Routes = [
     { path: 'settings', component: SettingsPage },
     { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
   ] },
-  { path: '', redirectTo: 'app/dashboard', pathMatch: 'full' },
+  { path: '', component: LoginPage, pathMatch: 'full' },
   { path: '**', redirectTo: 'app/dashboard' },
 ];

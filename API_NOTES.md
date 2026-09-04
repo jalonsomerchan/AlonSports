@@ -16,9 +16,12 @@ El documento `README.md` de `/Applications/MAMP/htdocs/OV2/sports/api/` es el co
 3. La URL de OAuth debe redirigir a `/auth/strava` y el callback de Strava debe estar registrado para `https://alon.one/sports/api/v1/auth/strava/callback`.
 4. Configurar CORS en `.env.php` con el origen exacto `https://sports.alon.one` y revisar que el backend exponga la API bajo el prefijo `/sports/api/v1`.
 
-## Pendiente recomendado
+## Flujo de login aplicado
 
-La API aún no tiene endpoint de email/contraseña: el botón de login usa OAuth de Strava, que es el flujo descrito en el contrato. También conviene añadir retry global para `419` y tipos OpenAPI completos cuando el backend los publique.
+- La pantalla de login inicia OAuth solicitando `/auth/strava` y redirige el navegador a `authorization_url`.
+- La redirección de la callback (`/?auth=success|error`) se procesa en Angular: en éxito se vuelve a cargar `/auth/session`; en error se muestra `message` y se limpian los parámetros de la URL.
+- El interceptor mantiene `withCredentials`, añade CSRF a las mutaciones, redirige a `/login` ante `401` y, ante `419`, refresca `/auth/session` y repite la petición una sola vez.
+- La API aún no tiene endpoint de email/contraseña: el botón de login usa OAuth de Strava, que es el flujo descrito en el contrato.
 
 ## Ampliaciones de API recomendadas
 
