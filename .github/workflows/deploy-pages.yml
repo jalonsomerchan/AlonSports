@@ -33,6 +33,9 @@ jobs:
       - name: Build Angular app
         run: npm run build:github
 
+      - name: Configure SPA fallback
+        run: cp dist/alonsports/browser/index.html dist/alonsports/browser/404.html
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
