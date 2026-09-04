@@ -1,11 +1,13 @@
 import { Routes } from '@angular/router';
 import { ActivitiesPage, ActivityPage, AppShell, DashboardPage, ImportPage, LiveActivitiesPage, LiveActivityPage, LiveDashboardPage, LiveSegmentsPage, LoginPage, SegmentDetailPage, SegmentEditorPage, SegmentsPage, SettingsPage, SharePage } from './app';
+import { ProgressPage } from './progress';
 import { authGuard } from './auth.guard';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage },
   { path: 'app', component: AppShell, canActivate: [authGuard], children: [
     { path: 'dashboard', component: LiveDashboardPage },
+    { path: 'progress', component: ProgressPage },
     { path: 'activities', component: LiveActivitiesPage },
     { path: 'activity/:id/share', component: SharePage },
     { path: 'activity/:id/:section', component: LiveActivityPage },

@@ -1,34 +1,38 @@
 # Notas de integración con Alon Sports API
 
-El documento `README.md` de `/Applications/MAMP/htdocs/OV2/sports/api/` es el contrato técnico de la API; no sustituye los requisitos de producto de esta aplicación. Las rutas privadas ya intentan cargar datos reales tras la sesión; los componentes demo originales se conservan como referencia visual.
+El contrato técnico del backend está en `README.md` y `openapi.yaml` dentro de `/Applications/MAMP/htdocs/OV2/sports/api/`. La PWA consume `https://alon.one/sports/api/v1`, mantiene la sesión en cookies HttpOnly y deja los identificadores de la API como valores opacos.
 
-## Ya preparado
+## Integración implementada en la PWA
 
-- `ApiService` usa `https://alon.one/sports/api/v1`, cookies HttpOnly (`withCredentials`) y el header `X-CSRF-Token` en mutaciones.
-- Están declarados los accesos base a sesión, CSRF, dashboard, actividades y segmentos.
-- El importador tiene el flujo visual para Strava y archivos FIT/GPX/TCX.
-- La build está en modo estático y la app incluye `manifest.webmanifest` y `sw.js` para GitHub Pages.
+- `AuthStore` inicializa `/auth/session`, conserva el CSRF y protege las rutas privadas.
+- El interceptor envía `withCredentials`, añade `X-CSRF-Token` en mutaciones, redirige ante `401` y reintenta una vez tras renovar la sesión en `419`.
+- El login usa `/auth/strava` y procesa `/?auth=success|error` sin exponer tokens en el navegador.
+- Dashboard y actividades consumen datos reales. `/activities` usa `limit` y el cursor opaco de `pagination.next_cursor`; la vista permite filtrar por deporte y cargar la siguiente página.
+- El detalle de actividad usa `map.points` del mapa normalizado, con fallback a `streams.latlng.data` únicamente para respuestas antiguas o incompletas.
+- El detalle de segmento usa `/segments/{segmentId}/detail` para récord, media, esfuerzos, evolución y mapa normalizado.
+- Perfil y preferencias se cargan desde `/profile` y se guardan con `PUT /profile` y `PUT /preferences`.
+- Importación FIT/GPX/TCX usa `POST /activities/import`, valida el límite de 25 MB y envía `name`, `sport_type`, `date` y `activity_file`.
+- La acción de sincronización usa `POST /activities/sync` y refresca el dashboard, actividades y segmentos.
+- El editor de segmento usa `POST /segments` y valida que el intervalo tenga al menos tres puntos.
+- Compartir actividad usa `GET/POST /activities/{activityId}/share`, respeta `hide_start` y permite copiar o compartir el enlace público.
 
-## Integración activa
+## Pendiente de integrar en la interfaz
 
-1. `AuthStore` inicializa `/auth/session` y protege las rutas privadas con un guard.
-2. `apiInterceptor` envía cookies y añade `X-CSRF-Token` automáticamente en mutaciones.
-3. La URL de OAuth debe redirigir a `/auth/strava` y el callback de Strava debe estar registrado para `https://alon.one/sports/api/v1/auth/strava/callback`.
-4. Configurar CORS en `.env.php` con el origen exacto `https://sports.alon.one` y revisar que el backend exponga la API bajo el prefijo `/sports/api/v1`.
+Estas rutas ya existen en el contrato, pero aún no tienen una experiencia completa en la PWA:
 
-## Flujo de login aplicado
+- Edición de nombre/etiquetas, notas, percepción de esfuerzo, meteorología, refresco desde Strava y borrado de actividad (`PUT`, `/labels`, `/notes`, `/weather`, `/refresh`, `DELETE`).
+- Estadísticas y análisis históricos (`/statistics` y `/analysis`) en una vista dedicada, incluyendo carga de entrenamiento, récords e insights.
+- Objetivos de segmento (`PUT /segments/{segmentId}/goal`), edición y borrado de segmentos, recalculado, grupos y orden personalizado.
+- Selección visual de puntos sobre el mapa real de una actividad al crear o editar un segmento; el editor actual envía índices, pero su previsualización aún usa la ruta de ejemplo.
+- Rutas locales: listado, editor de waypoints, detalle y exportación GPX/TCX (`/routes`).
+- Segmentos de Strava: atleta, favoritos, sincronización y exploración por bounds.
 
-- La pantalla de login inicia OAuth solicitando `/auth/strava` y redirige el navegador a `authorization_url`.
-- La redirección de la callback (`/?auth=success|error`) se procesa en Angular: en éxito se vuelve a cargar `/auth/session`; en error se muestra `message` y se limpian los parámetros de la URL.
-- El interceptor mantiene `withCredentials`, añade CSRF a las mutaciones, redirige a `/login` ante `401` y, ante `419`, refresca `/auth/session` y repite la petición una sola vez.
-- La API aún no tiene endpoint de email/contraseña: el botón de login usa OAuth de Strava, que es el flujo descrito en el contrato.
+## Nuevas mejoras necesarias
 
-## Ampliaciones de API recomendadas
-
-No son imprescindibles para renderizar la experiencia, pero ayudarían a eliminar lógica de presentación en Angular:
-
-- Un endpoint agregado de detalle de segmento que devuelva explícitamente ranking, evolución temporal y esfuerzos por actividad en una sola respuesta.
-- Contratos TypeScript/OpenAPI publicados para tipar `dashboard`, `streams`, `segments`, `strava`, `statistics` y `analysis` sin `unknown`.
-- Una respuesta de mapa normalizada (bounds, puntos decodificados o GeoJSON) para evitar que cada cliente implemente decodificación de polilíneas.
-- Metadatos de paginación/cursor para `/activities`; el contrato actual solo admite `limit`.
-- Endpoint de perfil editable y preferencias, ya que el README describe la sesión del usuario pero no mutaciones de perfil/configuración.
+- Generar un cliente TypeScript desde `openapi.yaml` o publicar tipos versionados para dejar de usar `unknown`/`Record<string, any>` en dashboard, detalle, streams, estadísticas y análisis.
+- Estandarizar en todos los endpoints los estados de carga, errores `ApiError` y mensajes de validación para que la PWA pueda mostrar acciones de recuperación concretas.
+- Añadir `ETag`/`Last-Modified` a dashboard, actividades, mapas y estadísticas; la PWA puede revalidar caché sin descargar de nuevo payloads grandes.
+- Definir una política de caché del service worker: lectura offline de la última sesión y datos, actualización visible del worker y exclusión explícita de OAuth y mutaciones.
+- Añadir idempotencia a sincronización e importación para evitar duplicados al reintentar desde una conexión móvil inestable.
+- Versionar los cambios de preferencias y devolver la preferencia persistida en cada actualización para mantener coherencia entre pestañas.
+- Documentar límites de frecuencia y tiempos esperados de sincronización de Strava, junto con un estado de progreso consultable si la sincronización pasa a ser asíncrona.
