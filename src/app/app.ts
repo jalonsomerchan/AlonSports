@@ -212,6 +212,49 @@ export class DashboardChart implements AfterViewInit, OnDestroy {
   ngOnDestroy() { this.redraw.destroy(); this.chart?.destroy(); }
 }
 
+@Component({ selector: 'app-activity-charts', imports: [MatIconModule], template: `<div class="activity-chart-grid"><article class="chart-card activity-data-chart"><div class="card-heading"><div><span class="eyebrow">RITMO Y VELOCIDAD</span><h2>Cómo has corrido</h2></div><mat-icon>speed</mat-icon></div><div class="activity-chart-canvas"><canvas #paceCanvas aria-label="Ritmo y velocidad de la actividad"></canvas></div><div class="chart-axis"><span>Inicio</span><span>Distancia</span><span>Final</span></div></article><article class="chart-card activity-data-chart"><div class="card-heading"><div><span class="eyebrow">ALTITUD</span><h2>Perfil del recorrido</h2></div><mat-icon>terrain</mat-icon></div><div class="activity-chart-canvas"><canvas #elevationCanvas aria-label="Perfil de altitud de la actividad"></canvas></div><div class="chart-axis"><span>Inicio</span><span>Distancia</span><span>Final</span></div></article><article class="chart-card activity-data-chart"><div class="card-heading"><div><span class="eyebrow">FRECUENCIA CARDÍACA</span><h2>Respuesta del cuerpo</h2></div><mat-icon>favorite</mat-icon></div><div class="activity-chart-canvas"><canvas #heartCanvas aria-label="Frecuencia cardíaca de la actividad"></canvas></div><div class="chart-axis"><span>Inicio</span><span>Media</span><span>Final</span></div></article><article class="chart-card activity-data-chart"><div class="card-heading"><div><span class="eyebrow">ZONAS DE PULSO</span><h2>Tiempo por intensidad</h2></div><mat-icon>donut_large</mat-icon></div><div class="activity-zone-canvas"><canvas #zoneCanvas aria-label="Distribución de zonas cardíacas"></canvas></div><p class="chart-empty" [class.visible]="!hasHeartRate()">No hay datos de frecuencia cardíaca.</p></article></div>`, changeDetection: ChangeDetectionStrategy.OnPush })
+export class ActivityCharts implements AfterViewInit, OnDestroy {
+  @ViewChild('paceCanvas', { static: true }) private paceCanvas!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('elevationCanvas', { static: true }) private elevationCanvas!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('heartCanvas', { static: true }) private heartCanvas!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('zoneCanvas', { static: true }) private zoneCanvas!: ElementRef<HTMLCanvasElement>;
+  readonly streams = input<Record<string, any> | null | undefined>();
+  readonly hasHeartRate = computed(() => this.values('heartrate').length > 0);
+  private readonly charts: import('chart.js').Chart[] = [];
+  private chartType: any;
+  private chartReady = false;
+  private readonly redraw = effect(() => { this.streams(); if (this.chartReady) this.render(); });
+
+  ngAfterViewInit() {
+    if (typeof window === 'undefined') return;
+    import('chart.js').then(({ Chart, registerables }) => { Chart.register(...registerables); this.chartType = Chart; this.chartReady = true; this.render(); });
+  }
+
+  private render() {
+    this.charts.splice(0).forEach(chart => chart.destroy());
+    const labels = this.labels();
+    const speed = this.values('velocity_smooth').map(value => value * 3.6);
+    const pace = speed.map(value => value > 0 ? 60 / value : null);
+    const altitude = this.values('altitude');
+    const heartRate = this.values('heartrate');
+    this.charts.push(new (this.chartConstructor())(this.paceCanvas.nativeElement, { type: 'line', data: { labels, datasets: [
+      { label: 'Velocidad km/h', data: speed, borderColor: '#76a8ff', backgroundColor: 'rgba(118,168,255,.12)', fill: true, yAxisID: 'speed' },
+      { label: 'Ritmo min/km', data: pace, borderColor: '#c9f45b', backgroundColor: 'transparent', yAxisID: 'pace' }
+    ] }, options: this.lineOptions({ speed: { position: 'left', title: 'km/h', color: '#76a8ff' }, pace: { position: 'right', title: 'min/km', color: '#c9f45b', reverse: true } }) }));
+    this.charts.push(new (this.chartConstructor())(this.elevationCanvas.nativeElement, { type: 'line', data: { labels, datasets: [{ label: 'Altitud m', data: altitude, borderColor: '#f0a45d', backgroundColor: 'rgba(240,164,93,.18)', fill: true }] }, options: this.lineOptions({ y: { position: 'left', title: 'metros', color: '#f0a45d' } }) }));
+    this.charts.push(new (this.chartConstructor())(this.heartCanvas.nativeElement, { type: 'line', data: { labels, datasets: [{ label: 'Pulso bpm', data: heartRate, borderColor: '#ff7184', backgroundColor: 'rgba(255,113,132,.14)', fill: true }] }, options: this.lineOptions({ y: { position: 'left', title: 'bpm', color: '#ff7184' } }) }));
+    const zones = this.heartZones(heartRate);
+    this.charts.push(new (this.chartConstructor())(this.zoneCanvas.nativeElement, { type: 'doughnut', data: { labels: ['Z1 Recuperación', 'Z2 Aeróbica', 'Z3 Tempo', 'Z4 Umbral', 'Z5 Máxima'], datasets: [{ data: zones, backgroundColor: ['#7dffb2', '#c9f45b', '#f0a45d', '#ff9a5b', '#ff5b70'], borderColor: '#181c16', borderWidth: 3 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '64%', plugins: { legend: { position: 'bottom', labels: { color: '#aab3a3', boxWidth: 9, padding: 10, font: { size: 9 } } }, tooltip: { backgroundColor: '#182019', borderColor: 'rgba(201,244,91,.25)', borderWidth: 1, titleColor: '#f0f2eb', bodyColor: '#c7d0bd' } } } }));
+  }
+
+  private chartConstructor(): any { return this.chartType; }
+  private labels() { const distance = this.values('distance'); return (distance.length ? distance : this.values('velocity_smooth')).map((value, index) => distance.length ? `${(value / 1000).toFixed(1)} km` : `${index + 1}`); }
+  private values(name: string) { const values = this.streams()?.[name]?.data; return Array.isArray(values) ? values.map(value => Number(value)).filter(value => Number.isFinite(value)) : []; }
+  private heartZones(values: number[]) { if (!values.length) return [0, 0, 0, 0, 0]; const zones = [0, 0, 0, 0, 0]; values.forEach(value => zones[value < 120 ? 0 : value < 145 ? 1 : value < 160 ? 2 : value < 175 ? 3 : 4]++); return zones; }
+  private lineOptions(axes: Record<string, { position: 'left' | 'right'; title: string; color: string; reverse?: boolean }>) { return { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'top', align: 'start', labels: { color: '#aab3a3', boxWidth: 9, boxHeight: 9, padding: 12, font: { size: 9 } } }, tooltip: { backgroundColor: '#182019', borderColor: 'rgba(201,244,91,.25)', borderWidth: 1, titleColor: '#f0f2eb', bodyColor: '#c7d0bd', padding: 9 } }, scales: Object.fromEntries(Object.entries(axes).map(([key, axis]) => [key, { position: axis.position, beginAtZero: !axis.reverse, reverse: axis.reverse ?? false, title: { display: true, text: axis.title, color: axis.color, font: { size: 9, weight: 'bold' } }, ticks: { color: axis.color, font: { size: 9 } }, grid: { color: 'rgba(255,255,255,.06)' } }])), elements: { line: { tension: .3 }, point: { radius: 0, hoverRadius: 3 } } }; }
+  ngOnDestroy() { this.redraw.destroy(); this.charts.splice(0).forEach(chart => chart.destroy()); }
+}
+
 @Component({ selector: 'app-activity-card', imports: [RouterLink, MatIconModule], inputs: ['activity'], template: `<a class="activity-card" [routerLink]="['/app/activity', activity.id, 'overview']"><div class="activity-icon" [style.--sport-color]="activity.color"><mat-icon>{{ activity.sport_type === 'Ride' ? 'directions_bike' : activity.sport_type === 'Walk' ? 'directions_walk' : 'directions_run' }}</mat-icon></div><div class="activity-info"><div class="activity-title-row"><h3>{{ activity.name }}</h3><mat-icon class="arrow">arrow_outward</mat-icon></div><p class="activity-date">@if (activity.date_tag) { <span class="date-tag" [class.today]="activity.date_tag === 'Hoy'" [class.yesterday]="activity.date_tag === 'Ayer'" [class.this-week]="activity.date_tag === 'Esta semana'">{{ activity.date_tag }}</span> } {{ activity.date }}</p><div class="activity-meta"><span><small>Distancia</small><strong>{{ activity.distance.toFixed(1) }} <em>km</em></strong></span><span><small>Tiempo</small><strong>{{ activity.moving_time }} <em>min</em></strong></span><span><small>Desnivel acumulado</small><strong>{{ activity.elevation }} <em>m</em></strong></span><span><small>Velocidad media</small><strong>{{ activity.speed.toFixed(1) }} <em>km/h</em></strong></span></div></div></a>`, changeDetection: ChangeDetectionStrategy.OnPush })
 export class ActivityCard { activity!: Activity; }
 
