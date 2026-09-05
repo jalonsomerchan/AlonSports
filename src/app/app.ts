@@ -1771,7 +1771,7 @@ export class RouteMap implements AfterViewInit, OnDestroy {
               ><span class="segment-color" [style.background]="segment.color"></span>
               <div>
                 <strong>{{ segment.name }}</strong>
-                <p>{{ segment.distance }} · {{ segment.attempts }} intentos @if (segment.absolute_rank_position) { <span class="absolute-position">· Posición absoluta: {{ segment.absolute_rank_position }}º</span> }</p>
+                <p>{{ segment.distance }} · {{ segment.attempts }} intentos @if (segment.absolute_rank_position) { <span class="absolute-position">· Pos. abs.: {{ segment.absolute_rank_position }}º</span> }</p>
               </div>
               <b>{{ segment.best }}</b
               ><mat-icon>chevron_right</mat-icon></a
@@ -3303,7 +3303,7 @@ export class LiveSegmentsPage {
               ></span>
               <div>
                 <strong>{{ segment.name }}</strong>
-                <p>{{ segment.distance }} · {{ segment.attempts }} intentos @if (segment.absolute_rank_position) { <span class="absolute-position">· Posición absoluta: {{ segment.absolute_rank_position }}º</span> }</p>
+                <p>{{ segment.distance }} · {{ segment.attempts }} intentos @if (segment.absolute_rank_position) { <span class="absolute-position">· Pos. abs.: {{ segment.absolute_rank_position }}º</span> }</p>
               </div>
               <b>{{ segment.best }}</b
               ><mat-icon>chevron_right</mat-icon></a
