@@ -35,6 +35,7 @@ Hoy la app cubre **registrar / consultar** y ya empieza a convertir los datos en
 - Pantalla Estadísticas con totales históricos, evolución mensual, distribución por deporte, récords e insights semanales.
 - Comparación de dos actividades con selección de salidas, streams alineados y diferencias de rendimiento.
 - Diario de actividad editable desde el detalle: nombre, notas, esfuerzo percibido, molestias, tipo de sesión, acompañantes y etiquetas.
+- Gestión completa de etiquetas desde “Más”: crear, editar, borrar y configurar nombre, color e icono; las etiquetas asignadas se muestran en el historial y en el detalle de cada actividad.
 - Meteorología de la actividad con condiciones guardadas y actualización bajo demanda desde el detalle.
 - Menú “Más” con una sección de Rutas: listado, detalle con mapa, descargas GPX/TCX según disponibilidad y creación desde el GPS de una actividad.
 - Menú “Más” accesible desde escritorio y móvil, con accesos a Progreso, Estadísticas y Comparar actividades.
@@ -48,7 +49,7 @@ Hoy la app cubre **registrar / consultar** y ya empieza a convertir los datos en
 | P0 | Progreso histórico | Ya existe la pantalla `/app/statistics` con totales, evolución mensual, distribución por deporte, récords e insights. Los filtros de periodo/deporte recalculan los datos y muestran comparación contra el periodo anterior. Faltan comparativas mensuales más ricas. | `/statistics?sport=Run|Ride|Walk`, `/analysis`. | Una sección “Progreso” que convierta meses de datos en una historia entendible. |
 | P1 | Rutas | Ya hay listado, detalle con mapa, exportación GPX/TCX y creación de una ruta a partir del GPS de una actividad en la sección “Más”. Faltan edición de waypoints, rutas sugeridas, heatmap personal y mapas offline. | `/routes`, `/maps/routes/{routeId}`, `/heatmap`, `/matched-routes`. | Descubrir, guardar, preparar y reutilizar recorridos antes de salir. |
 | P1 | Segmentos competitivos | Los segmentos propios funcionan en modo básico, pero faltan editar, borrar, recalcular, objetivos, grupos, orden, segmentos de Strava, favoritos, exploración por mapa y leaderboards filtrables. | `/segments/{id}` PUT/DELETE/recalculate/goal, `/segment-groups`, `/strava/segments`, `/strava/segments/explore`. | Pasar de “mis tramos” a un ecosistema de competición y mejora continua. |
-| P1 | Edición y diario de actividad | El detalle ya permite editar el diario, consultar/actualizar meteorología, refrescar desde Strava, eliminar con confirmación y crear actividades derivadas mediante recorte, división o unión. | `/activities/{id}`, `/labels`, `/notes`, `/weather`, `/refresh`, `/crop`, `/split`, `/merge`. | Poder corregir, contextualizar y aprender de cada salida sin salir de la actividad. |
+| P1 | Edición y diario de actividad | El detalle ya permite editar el diario, asignar etiquetas, consultar/actualizar meteorología, refrescar desde Strava, eliminar con confirmación y crear actividades derivadas mediante recorte, división o unión. La gestión de etiquetas está disponible desde “Más”. | `/activities/{id}`, `/activities/{id}/labels`, `/labels`, `/notes`, `/weather`, `/refresh`, `/crop`, `/split`, `/merge`. | Poder corregir, contextualizar y aprender de cada salida sin salir de la actividad. |
 | P1 | Entrenamiento guiado | Ya se pueden planificar y borrar sesiones básicas con fecha, duración e intensidad. Faltan planes, bloques estructurados y una acción de “enviar al dispositivo”. | `/planned-workouts`; la API define bloques e intensidad. | La app deja de ser solo un diario y acompaña el siguiente entrenamiento. |
 | P1 | Comparación de recorridos | Ya existe `/app/compare` para comparar dos actividades y sus streams de velocidad. Falta el emparejamiento automático de rutas y una alineación espacial más precisa. | `/matched-routes`, `/compare?one=&two=`. | Ver dónde se ganó o perdió tiempo en el mismo recorrido. |
 | P2 | Grabación y seguridad | La PWA no ofrece grabación GPS en directo, datos de rendimiento en tiempo real, Beacon ni flujo de emergencia. | `/recordings` permite guardar una actividad grabada; el resto requiere producto/integración adicional. | Cubrir el antes, durante y después de la actividad. |
@@ -155,6 +156,8 @@ La vista de mapas ya permite consultar rutas guardadas, abrir su detalle con map
 ### 8. Edición, privacidad y confianza
 
 - El detalle de actividad ya incluye un diario editable para nombre, etiquetas, notas, esfuerzo percibido, molestias, tipo de entrenamiento y acompañantes, con guardado conjunto y feedback;
+- La sección “Más > Etiquetas” permite crear, editar y borrar etiquetas, configurar color/icono y consultar cuántas actividades usa cada una;
+- El historial y el detalle muestran las etiquetas asignadas, y el selector del diario permite añadir o quitar varias etiquetas de una actividad en un solo guardado;
 - mostrar meteorología y permitir actualizarla desde el detalle;
 - refrescar una actividad desde Strava sin duplicarla y eliminarla con confirmación clara;
 - recortar, dividir y unir con confirmación clara: las operaciones crean una actividad derivada y conservan las originales;

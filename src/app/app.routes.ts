@@ -4,6 +4,7 @@ import { ProgressPage } from './progress';
 import { StatisticsPage } from './statistics';
 import { ComparePage } from './compare';
 import { MorePage, RouteDetailPage, RoutesPage } from './more';
+import { LabelsPage } from './labels';
 import { authGuard } from './auth.guard';
 
 export const routes: Routes = [
@@ -18,6 +19,7 @@ export const routes: Routes = [
     { path: 'more', component: MorePage },
     { path: 'routes/:id', component: RouteDetailPage },
     { path: 'routes', component: RoutesPage },
+    { path: 'labels', component: LabelsPage },
     { path: 'activity/:id/:section', component: LiveActivityPage },
     { path: 'activity/:id', redirectTo: 'activity/:id/overview', pathMatch: 'full' },
     { path: 'segments/new', component: SegmentEditorPage },
