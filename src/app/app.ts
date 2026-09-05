@@ -6,6 +6,7 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet, ActivatedRoute } fr
 import { MatIconModule } from '@angular/material/icon';
 import { Observable, catchError, forkJoin, map, of, shareReplay, tap } from 'rxjs';
 import { MiniChart, SegmentSpark } from './chart-components';
+import { PwaService } from './pwa.service';
 
 export type Sport = 'Run' | 'Ride' | 'Walk';
 export type ActivityDateTag = 'Hoy' | 'Ayer' | 'Esta semana' | '';
@@ -147,8 +148,40 @@ export class SportsDataStore {
   private duration(seconds: number) { return seconds ? `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}` : '—'; }
 }
 
-@Component({ selector: 'app-root', imports: [RouterOutlet], template: '<router-outlet />', changeDetection: ChangeDetectionStrategy.OnPush })
-export class App { constructor() { if (typeof window !== 'undefined' && 'serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => undefined)); } } }
+@Component({ selector: 'app-root', imports: [RouterOutlet, MatIconModule], template: `
+  <router-outlet />
+  @if (booting()) {
+    <div class="app-splash" role="status" aria-label="Cargando Alon Sports">
+      <div class="app-splash-orbit"></div>
+      <img src="images/alon-route-art.png" alt="" width="170" height="170" />
+      <p class="app-splash-brand">ALON <em>SPORTS</em></p>
+      <span>Tu entrenamiento, más claro.</span>
+    </div>
+  }
+  @if (pwa.isOffline()) {
+    <div class="pwa-status pwa-status-offline" role="status"><mat-icon>cloud_off</mat-icon><span>Sin conexión · tus datos se sincronizarán al volver.</span></div>
+  }
+  @if (pwa.updateAvailable()) {
+    <div class="pwa-update" role="status"><span><strong>Nueva versión disponible</strong><small>Actualiza para seguir usando Alon Sports.</small></span><button type="button" (click)="pwa.applyUpdate()">Actualizar</button></div>
+  }
+  @if (pwa.canInstall() && !pwa.isInstalled()) {
+    <aside class="pwa-install" aria-label="Instalar Alon Sports">
+      <span class="pwa-install-icon"><img src="icons/icon-96.png" alt="" width="42" height="42" /></span>
+      <span><strong>Instala Alon Sports</strong><small>Accede más rápido y úsala a pantalla completa.</small></span>
+      <button type="button" (click)="pwa.install()">Instalar</button>
+    </aside>
+  }
+`, changeDetection: ChangeDetectionStrategy.OnPush })
+export class App {
+  readonly pwa = inject(PwaService);
+  readonly booting = signal(true);
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => this.booting.set(false), 520);
+    }
+  }
+}
 
 @Component({ selector: 'app-login', imports: [MatIconModule], template: `
   <main class="login-page"><div class="login-grid"></div><section class="login-card">
