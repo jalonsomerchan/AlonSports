@@ -90,6 +90,91 @@ export class SegmentSpark implements AfterViewInit, OnDestroy {
 }
 
 @Component({
+  selector: 'app-segment-performance-chart',
+  template: `<div class="chart-canvas segment-performance-chart" role="img" aria-label="Evolución del tiempo en los esfuerzos del segmento"><canvas #canvas></canvas></div>`,
+  styles: [`.chart-canvas{position:relative;width:100%;height:230px}.chart-canvas canvas{display:block;width:100%!important;height:100%!important}`],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class SegmentPerformanceChart implements AfterViewInit, OnDestroy {
+  @ViewChild('canvas', { static: true }) private canvas!: ElementRef<HTMLCanvasElement>;
+  readonly values = input<number[]>([]);
+  readonly color = input('#c9f45b');
+  private chart?: import('chart.js').Chart;
+  private chartConstructor: any;
+  private readonly redraw = effect(() => {
+    const values = this.values();
+    const color = this.color();
+    if (this.chart) this.update(values, color);
+  });
+
+  ngAfterViewInit() {
+    registerChart().then(Chart => {
+      this.chartConstructor = Chart;
+      this.chart = new Chart(this.canvas.nativeElement, this.config(this.values(), this.color()));
+    });
+  }
+
+  private config(values: number[], color: string): any {
+    const points = values.length ? values : [0, 0];
+    return {
+      type: 'line',
+      data: {
+        labels: points.map((_, index) => `Esfuerzo ${index + 1}`),
+        datasets: [{
+          label: 'Tiempo por esfuerzo',
+          data: points,
+          borderColor: color,
+          backgroundColor: 'rgba(201,244,91,.12)',
+          fill: true,
+          borderWidth: 2.5,
+        }],
+      },
+      options: {
+        ...lineOptions({
+          x: {
+            ticks: { color: chartColors.muted, maxRotation: 0, autoSkip: true, font: { size: 9 } },
+            grid: { color: chartColors.grid },
+          },
+          y: {
+            reverse: true,
+            title: { display: true, text: 'tiempo', color: chartColors.muted, font: { size: 9 } },
+            ticks: {
+              color: chartColors.muted,
+              font: { size: 9 },
+              callback: (value: string | number) => this.duration(Number(value)),
+            },
+            grid: { color: chartColors.grid },
+          },
+        }),
+        plugins: {
+          ...lineOptions().plugins,
+          legend: { display: false },
+          tooltip: {
+            ...lineOptions().plugins.tooltip,
+            callbacks: { label: (context: any) => ` ${this.duration(Number(context.raw ?? 0))}` },
+          },
+        },
+      },
+    };
+  }
+
+  private duration(seconds: number) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+    return `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
+  }
+
+  private update(values: number[], color: string) {
+    if (!this.chart) return;
+    const data = this.config(values, color).data;
+    this.chart.data.labels = data.labels;
+    this.chart.data.datasets = data.datasets as any;
+    this.chart.update('none');
+  }
+
+  ngOnDestroy() { this.redraw.destroy(); this.chart?.destroy(); }
+}
+
+@Component({
   selector: 'app-training-load-chart',
   template: `<div class="chart-canvas training-load-chart" role="img" aria-label="Evolución de carga, fitness y fatiga"><canvas #canvas></canvas></div>`,
   styles: [`.chart-canvas{position:relative;width:100%;height:230px}.chart-canvas canvas{display:block;width:100%!important;height:100%!important}`],
