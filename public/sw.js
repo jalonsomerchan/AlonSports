@@ -1,4 +1,4 @@
-const CACHE = 'alon-sports-v2';
+const CACHE = 'alon-sports-v3';
 const PRECACHE = [
   '/',
   '/index.html',

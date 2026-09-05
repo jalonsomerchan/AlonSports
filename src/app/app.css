@@ -17,6 +17,7 @@
 .position-badge.gold{background:#b88a24!important;color:#fff3c4}
 .position-badge.silver{background:#77818d!important;color:#f2f5f8}
 .position-badge.bronze{background:#9a5a32!important;color:#ffe0c7}
+.absolute-position{color:var(--lime);font-weight:700}
 .dashboard-chart{height:270px;margin-top:20px;position:relative}
 .dashboard-chart canvas{display:block;width:100%!important;height:100%!important}
 .activity-metrics{grid-template-columns:repeat(5,1fr)}
