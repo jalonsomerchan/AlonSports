@@ -1609,6 +1609,10 @@ export class ActivitiesPage {
   selector: 'app-route-map',
   template: `<div class="route-map maplibre-shell" [class.activity-route-map]="activityName()">
     <div #map class="maplibre-host"></div>
+    <svg #routeOverlay class="map-route-overlay" aria-hidden="true" focusable="false">
+      <polyline class="map-route-overlay-shadow"></polyline>
+      <polyline class="map-route-overlay-line"></polyline>
+    </svg>
     <div class="map-topbar">
       <div class="map-context">
         <span class="map-live-dot"></span>
@@ -1634,6 +1638,7 @@ export class ActivitiesPage {
 })
 export class RouteMap implements AfterViewInit, OnDestroy {
   @ViewChild('map', { static: true }) private mapElement!: ElementRef<HTMLDivElement>;
+  @ViewChild('routeOverlay', { static: true }) private routeOverlayElement!: ElementRef<SVGSVGElement>;
   readonly routePoints = input<[number, number][]>(DEFAULT_ROUTE);
   readonly activityName = input('');
   readonly sportLabel = input('');
@@ -1687,6 +1692,11 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     this.map.once('style.load', renderRoute);
     this.map.once('load', renderRoute);
     this.map.once('idle', renderRoute);
+    const refreshOverlay = () => this.updateRouteOverlay(toMapLibreCoordinates(this.routePoints()));
+    this.map.on('move', refreshOverlay);
+    this.map.on('resize', refreshOverlay);
+    this.map.on('rotate', refreshOverlay);
+    this.map.on('pitch', refreshOverlay);
   }
 
   private drawRoute(points: [number, number][]) {
@@ -1694,6 +1704,7 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     const maplibre = this.maplibre;
     const coords = toMapLibreCoordinates(points);
     if (coords.length < 2) return;
+    this.updateRouteOverlay(coords);
     const routeData = this.routeFeature(coords);
     const checkpoints = [0.25, 0.5, 0.75].map((progress, index) => {
       const point = coords[Math.min(coords.length - 1, Math.max(1, Math.round((coords.length - 1) * progress)))];
@@ -1714,6 +1725,25 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     const bounds = new maplibre.LngLatBounds(coords[0], coords[0]);
     coords.slice(1).forEach(point => bounds.extend(point));
     this.map.fitBounds(bounds, { padding: 42, maxZoom: 16, duration: 0 });
+    this.updateRouteOverlay(coords);
+  }
+
+  private updateRouteOverlay(points: [number, number][]) {
+    if (!this.map || !this.routeOverlayElement) return;
+    const svg = this.routeOverlayElement.nativeElement;
+    const shadow = svg.querySelector<SVGPolylineElement>('.map-route-overlay-shadow');
+    const line = svg.querySelector<SVGPolylineElement>('.map-route-overlay-line');
+    if (!shadow || !line) return;
+    const width = this.mapElement.nativeElement.clientWidth;
+    const height = this.mapElement.nativeElement.clientHeight;
+    if (width <= 0 || height <= 0 || points.length < 2) return;
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    const screenPoints = points.map(([longitude, latitude]) => {
+      const point = this.map!.project({ lng: longitude, lat: latitude });
+      return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+    }).join(' ');
+    shadow.setAttribute('points', screenPoints);
+    line.setAttribute('points', screenPoints);
   }
 
   private routeFeature(coords: [number, number][]) {
