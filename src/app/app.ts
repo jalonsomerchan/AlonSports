@@ -2622,8 +2622,25 @@ export class SettingsPage {
           <h1>Hola, {{ firstName() }} <span>✦</span></h1>
           <p class="muted">Datos sincronizados desde Alon Sports.</p>
         </div>
-        <button class="round-button" routerLink="/app/import"><mat-icon>add</mat-icon></button>
+        <div class="dashboard-actions">
+          <button
+            class="outline-button dashboard-sync"
+            type="button"
+            aria-label="Actualizar datos de Strava"
+            (click)="syncStrava()"
+            [disabled]="syncing()"
+          >
+            <mat-icon>{{ syncing() ? 'sync' : 'refresh' }}</mat-icon>
+            {{ syncing() ? 'Actualizando…' : 'Actualizar Strava' }}
+          </button>
+          <button class="round-button" routerLink="/app/import" aria-label="Añadir actividad">
+            <mat-icon>add</mat-icon>
+          </button>
+        </div>
       </div>
+      @if (syncMessage()) {
+        <p class="dashboard-sync-message" role="status">{{ syncMessage() }}</p>
+      }
       <div class="week-banner">
         <div>
           <p class="eyebrow lime">ESTADO DE ENTRENAMIENTO</p>
@@ -2699,7 +2716,10 @@ export class LiveDashboardPage {
   readonly firstName = computed(() => this.auth.user()?.firstname ?? 'Atleta');
   readonly trainingLoad = signal<Record<string, any> | null>(null);
   readonly loadError = signal('');
-  readonly error = computed(() => this.data.error() || this.loadError());
+  readonly syncing = signal(false);
+  readonly syncMessage = signal('');
+  readonly syncError = signal('');
+  readonly error = computed(() => this.data.error() || this.loadError() || this.syncError());
   readonly trendPoints = computed<DashboardChartPoint[]>(() => {
     const source = (this.data.dashboard()?.trend ?? []) as any[];
     const byDay = new Map(source.map((item) => [String(item.day ?? '').slice(0, 10), item]));
@@ -2769,12 +2789,31 @@ export class LiveDashboardPage {
   constructor() {
     this.data.loadDashboard();
     this.data.loadActivities();
-    this.api
-      .trainingLoad()
-      .subscribe({
-        next: (value) => this.trainingLoad.set(value),
-        error: () => this.loadError.set('No se ha podido cargar el estado de entrenamiento.'),
-      });
+    this.loadTrainingLoad();
+  }
+  syncStrava() {
+    if (this.syncing()) return;
+    this.syncing.set(true);
+    this.syncMessage.set('');
+    this.syncError.set('');
+    this.api.syncActivities().subscribe({
+      next: () => {
+        this.data.refresh();
+        this.loadTrainingLoad();
+        this.syncMessage.set('Datos de Strava actualizados.');
+      },
+      error: () => {
+        this.syncError.set('No se han podido actualizar los datos de Strava.');
+        this.syncing.set(false);
+      },
+      complete: () => this.syncing.set(false),
+    });
+  }
+  private loadTrainingLoad() {
+    this.api.trainingLoad().subscribe({
+      next: (value) => this.trainingLoad.set(value),
+      error: () => this.loadError.set('No se ha podido cargar el estado de entrenamiento.'),
+    });
   }
   private formatNumber(meters: number) {
     return (Number(meters) / 1000).toFixed(1);
@@ -2998,13 +3037,6 @@ export class LiveSegmentsPage {
       </nav>
       @if (section() === 'overview') {
         <app-route-map [routePoints]="routePoints()" />
-        <div class="insight-card">
-          <span class="insight-icon"><mat-icon>cloud_done</mat-icon></span>
-          <div>
-            <strong>Detalle cargado desde la API</strong>
-            <p>{{ streamsLabel() }}</p>
-          </div>
-        </div>
         <div class="detail-grid summary-data">
           <article class="detail-card">
             <span>TIEMPO TOTAL</span
