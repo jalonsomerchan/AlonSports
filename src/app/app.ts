@@ -1623,16 +1623,16 @@ export class ActivitiesPage {
       </div>
       <span class="map-location">{{ location() || 'Madrid' }}</span>
     </div>
-    <div class="map-stats">
-      <span><strong>{{ distanceLabel() }}</strong><small>DISTANCIA</small></span>
-      <span><strong>{{ duration() || '—' }}</strong><small>EN MOVIMIENTO</small></span>
-      <span><strong>{{ pace() || '—' }}</strong><small>RITMO MEDIO</small></span>
-      <span><strong>{{ elevationLabel() }}</strong><small>DESNIVEL</small></span>
-    </div>
     <div class="map-legend">
       <span><i class="start-dot"></i> Inicio</span><span><i class="end-dot"></i> Final</span>
       <span><i class="checkpoint-dot"></i> Hitos</span>
     </div>
+  </div>
+  <div class="map-stats">
+    <span><strong>{{ distanceLabel() }}</strong><small>DISTANCIA</small></span>
+    <span><strong>{{ duration() || '—' }}</strong><small>EN MOVIMIENTO</small></span>
+    <span><strong>{{ pace() || '—' }}</strong><small>RITMO MEDIO</small></span>
+    <span><strong>{{ elevationLabel() }}</strong><small>DESNIVEL</small></span>
   </div>`,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -1724,7 +1724,11 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     ];
     const bounds = new maplibre.LngLatBounds(coords[0], coords[0]);
     coords.slice(1).forEach(point => bounds.extend(point));
-    this.map.fitBounds(bounds, { padding: 42, maxZoom: 16, duration: 0 });
+    this.map.fitBounds(bounds, {
+      padding: { top: 98, bottom: 54, left: 48, right: 48 },
+      maxZoom: 14,
+      duration: 0,
+    });
     this.updateRouteOverlay(coords);
   }
 
