@@ -12,7 +12,9 @@ import {
   signal,
   ViewChild,
 } from '@angular/core';
-import * as L from 'leaflet';
+import type * as maplibregl from 'maplibre-gl';
+import type { GeoJSON as GeoJSONData } from 'geojson';
+import { MAP_STYLE, distanceBetween, toMapLibreCoordinates } from './map-config';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import {
@@ -260,7 +262,7 @@ export const SEGMENTS: Segment[] = [
     trend: [40, 33, 35, 28, 31, 25, 26, 20],
   },
 ];
-const DEFAULT_ROUTE: L.LatLngExpression[] = [
+const DEFAULT_ROUTE: [number, number][] = [
   [40.4143, -3.6996],
   [40.4137, -3.6978],
   [40.4148, -3.6959],
@@ -1605,102 +1607,130 @@ export class ActivitiesPage {
 
 @Component({
   selector: 'app-route-map',
-  template: `<div class="route-map leaflet-shell">
-    <div #map class="leaflet-host"></div>
-    <div class="map-label">MADRID <span>•</span> RETIRO</div>
+  template: `<div class="route-map maplibre-shell" [class.activity-route-map]="activityName()">
+    <div #map class="maplibre-host"></div>
+    <div class="map-topbar">
+      <div class="map-context">
+        <span class="map-live-dot"></span>
+        <div>
+          <span class="map-kicker">{{ sportLabel() || 'RECORRIDO GPS' }}</span>
+          <strong>{{ activityName() || 'Ruta de actividad' }}</strong>
+        </div>
+      </div>
+      <span class="map-location">{{ location() || 'Madrid' }}</span>
+    </div>
+    <div class="map-stats">
+      <span><strong>{{ distanceLabel() }}</strong><small>DISTANCIA</small></span>
+      <span><strong>{{ duration() || '—' }}</strong><small>EN MOVIMIENTO</small></span>
+      <span><strong>{{ pace() || '—' }}</strong><small>RITMO MEDIO</small></span>
+      <span><strong>{{ elevationLabel() }}</strong><small>DESNIVEL</small></span>
+    </div>
     <div class="map-legend">
-      <span><i class="start-dot"></i> Inicio</span><span><i class="end-dot"></i> Final</span
-      ><span class="map-duration">45:02</span>
+      <span><i class="start-dot"></i> Inicio</span><span><i class="end-dot"></i> Final</span>
+      <span><i class="checkpoint-dot"></i> Hitos</span>
     </div>
   </div>`,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RouteMap implements AfterViewInit, OnDestroy {
   @ViewChild('map', { static: true }) private mapElement!: ElementRef<HTMLDivElement>;
-  readonly routePoints = input<L.LatLngExpression[]>(DEFAULT_ROUTE);
-  private map?: L.Map;
-  private routeLayer?: L.LayerGroup;
-  private pointsLayer?: L.LayerGroup;
+  readonly routePoints = input<[number, number][]>(DEFAULT_ROUTE);
+  readonly activityName = input('');
+  readonly sportLabel = input('');
+  readonly location = input('');
+  readonly distance = input<number | null>(null);
+  readonly duration = input('');
+  readonly pace = input('');
+  readonly elevation = input<number | null>(null);
+  readonly routeDistance = computed(() => this.routePoints().reduce((total, point, index, points) => {
+    if (!index) return total;
+    return total + distanceBetween(points[index - 1], point);
+  }, 0));
+  readonly distanceLabel = computed(() => {
+    const value = this.distance() ?? this.routeDistance() / 1000;
+    return value > 0 ? `${value.toFixed(2)} km` : '—';
+  });
+  readonly elevationLabel = computed(() => {
+    const value = this.elevation();
+    return value === null || value === undefined ? '—' : `+${Math.round(value)} m`;
+  });
+  private map?: maplibregl.Map;
+  private maplibre?: typeof import('maplibre-gl');
+  private routeMarkers: maplibregl.Marker[] = [];
+  private readonly routeSourceId = 'activity-route';
+  private readonly checkpointsSourceId = 'activity-checkpoints';
   private readonly redraw = effect(() => {
     const points = this.routePoints();
-    if (this.map && points.length) this.drawRoute(points);
+    if (this.map?.isStyleLoaded() && points.length) this.drawRoute(points);
   });
 
-  ngAfterViewInit() {
+  async ngAfterViewInit() {
     if (typeof window === 'undefined') return;
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
-    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 });
-    this.map = L.map(this.mapElement.nativeElement, {
-      zoomControl: false,
-      attributionControl: false,
-      layers: [osm],
-    }).setView([40.4168, -3.7038], 13);
-    L.control.zoom({ position: 'bottomright' }).addTo(this.map);
-    L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(this.map);
-    this.routeLayer = L.layerGroup().addTo(this.map);
-    this.pointsLayer = L.layerGroup().addTo(this.map);
-    L.control
-      .layers(
-        { OpenStreetMap: osm, Relieve: topo },
-        { Recorrido: this.routeLayer, 'Puntos clave': this.pointsLayer },
-        { collapsed: true, position: 'topright' },
-      )
-      .addTo(this.map);
-    this.drawRoute(this.routePoints());
-    window.setTimeout(() => this.map?.invalidateSize(), 0);
+    const maplibre = await import('maplibre-gl');
+    this.maplibre = maplibre;
+    const initial = toMapLibreCoordinates(this.routePoints());
+    this.map = new maplibre.Map({
+      container: this.mapElement.nativeElement,
+      style: MAP_STYLE,
+      center: initial[0] ?? [-3.7038, 40.4168],
+      zoom: 13,
+      attributionControl: { compact: true },
+    });
+    this.map.addControl(new maplibre.NavigationControl({ showCompass: true }), 'top-right');
+    this.map.addControl(new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
+    this.map.once('load', () => {
+      this.drawRoute(this.routePoints());
+      window.setTimeout(() => this.map?.resize(), 0);
+    });
   }
 
-  private drawRoute(points: L.LatLngExpression[]) {
-    if (!this.map || !this.routeLayer || !this.pointsLayer || points.length < 2) return;
-    this.routeLayer.clearLayers();
-    this.pointsLayer.clearLayers();
-    const coords = points.map((point) => L.latLng(point));
-    L.polyline(coords, {
-      color: '#081008',
-      weight: 10,
-      opacity: 0.8,
-      lineCap: 'round',
-      lineJoin: 'round',
-    }).addTo(this.routeLayer);
-    L.polyline(coords, {
-      color: '#c9f45b',
-      weight: 5,
-      opacity: 1,
-      lineCap: 'round',
-      lineJoin: 'round',
-    }).addTo(this.routeLayer);
-    const startIcon = L.divIcon({
-      className: 'leaflet-route-marker',
-      html: '<span class="marker-start"></span>',
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
+  private drawRoute(points: [number, number][]) {
+    if (!this.map || !this.maplibre || points.length < 2 || !this.map.isStyleLoaded()) return;
+    const maplibre = this.maplibre;
+    const coords = toMapLibreCoordinates(points);
+    const routeData = this.routeFeature(coords);
+    const checkpoints = [0.25, 0.5, 0.75].map((progress, index) => {
+      const point = coords[Math.min(coords.length - 1, Math.max(1, Math.round((coords.length - 1) * progress)))];
+      return { type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: point }, properties: { label: `Hito ${index + 1}`, progress: Math.round(progress * 100) } };
     });
-    const finishIcon = L.divIcon({
-      className: 'leaflet-route-marker',
-      html: '<span class="marker-finish"></span>',
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
-    });
-    L.marker(coords[0], { icon: startIcon })
-      .bindTooltip('Inicio', { direction: 'top', offset: [0, -8] })
-      .addTo(this.pointsLayer);
-    L.marker(coords.at(-1)!, { icon: finishIcon })
-      .bindTooltip('Final · 45:02', { direction: 'top', offset: [0, -8] })
-      .addTo(this.pointsLayer);
-    L.circleMarker(coords[Math.floor(coords.length / 2)], {
-      radius: 5,
-      color: '#16200b',
-      weight: 2,
-      fillColor: '#ffffff',
-      fillOpacity: 1,
-    })
-      .bindPopup('<strong>Segmento destacado</strong><br>Cuesta de Moyano · 3:42')
-      .addTo(this.pointsLayer);
-    this.map.fitBounds(L.latLngBounds(coords), { padding: [28, 28] });
+    this.setGeoJsonSource(this.routeSourceId, routeData);
+    this.setGeoJsonSource(this.checkpointsSourceId, { type: 'FeatureCollection' as const, features: checkpoints });
+    if (!this.map.getLayer('activity-route-shadow')) {
+      this.map.addLayer({ id: 'activity-route-shadow', type: 'line', source: this.routeSourceId, paint: { 'line-color': '#081008', 'line-width': 10, 'line-opacity': .82, 'line-blur': 1.2 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+      this.map.addLayer({ id: 'activity-route-line', type: 'line', source: this.routeSourceId, paint: { 'line-color': '#c9f45b', 'line-width': 5, 'line-opacity': 1 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+      this.map.addLayer({ id: 'activity-checkpoints', type: 'circle', source: this.checkpointsSourceId, paint: { 'circle-radius': 5, 'circle-color': '#ffffff', 'circle-stroke-color': '#16200b', 'circle-stroke-width': 2 } });
+    }
+    this.routeMarkers.forEach(marker => marker.remove());
+    this.routeMarkers = [
+      this.addMarker(coords[0], 'marker-start', 'Inicio'),
+      this.addMarker(coords.at(-1)!, 'marker-finish', this.duration() ? `Final · ${this.duration()}` : 'Final'),
+    ];
+    const bounds = new maplibre.LngLatBounds(coords[0], coords[0]);
+    coords.slice(1).forEach(point => bounds.extend(point));
+    this.map.fitBounds(bounds, { padding: 42, maxZoom: 16, duration: 0 });
+  }
+
+  private routeFeature(coords: [number, number][]) {
+    return { type: 'Feature' as const, geometry: { type: 'LineString' as const, coordinates: coords }, properties: {} };
+  }
+
+  private setGeoJsonSource(id: string, data: unknown) {
+    if (!this.map) return;
+    const source = this.map.getSource(id) as maplibregl.GeoJSONSource | undefined;
+    if (source) source.setData(data as GeoJSONData);
+    else this.map.addSource(id, { type: 'geojson', data: data as GeoJSONData });
+  }
+
+  private addMarker(point: [number, number], className: string, label: string) {
+    const element = document.createElement('span');
+    element.className = `maplibre-route-marker ${className}`;
+    if (!this.maplibre) throw new Error('MapLibre no está disponible');
+    return new this.maplibre.Marker({ element }).setLngLat(point).setPopup(new this.maplibre.Popup({ offset: 12 }).setText(label)).addTo(this.map!);
   }
 
   ngOnDestroy() {
     this.redraw.destroy();
+    this.routeMarkers.forEach(marker => marker.remove());
     this.map?.remove();
   }
 }
@@ -2060,9 +2090,9 @@ export class SegmentDetailPage {
       .map((item) => Number(item.elapsed_time ?? 0))
       .filter((value) => value > 0),
   );
-  readonly mapPoints = computed<L.LatLngExpression[]>(() =>
+  readonly mapPoints = computed<[number, number][]>(() =>
     this.detail()?.map?.points?.length
-      ? (this.detail()!.map.points as L.LatLngExpression[])
+      ? this.detail()!.map.points
       : DEFAULT_ROUTE,
   );
   readonly sportLabel = computed(() =>
@@ -2173,7 +2203,7 @@ export class SegmentEditorPage {
   readonly saving = signal(false);
   readonly saved = signal(false);
   readonly error = signal('');
-  readonly routePoints = computed<L.LatLngExpression[]>(() => DEFAULT_ROUTE);
+  readonly routePoints = computed<[number, number][]>(() => DEFAULT_ROUTE);
   constructor() {
     this.data.loadActivities();
   }
@@ -2210,8 +2240,8 @@ export class SegmentEditorPage {
 
 @Component({
   selector: 'app-share',
-  imports: [RouterLink, MatIconModule],
-  template: `<section class="page">
+  imports: [FormsModule, RouterLink, MatIconModule],
+  template: `<section class="page share-studio-page">
     <div class="back-row">
       <a [routerLink]="['/app/activity', id, 'overview']"
         ><mat-icon>arrow_back</mat-icon> Actividad</a
@@ -2220,73 +2250,305 @@ export class SegmentEditorPage {
     <div class="page-heading">
       <div>
         <p class="eyebrow">COMPARTE EL ESFUERZO</p>
-        <h1>Compartir actividad</h1>
-        <p class="muted">Elige cómo quieres enseñar tu salida.</p>
+        <h1>Crear tarjeta <span>para compartir</span></h1>
+        <p class="muted">Diseña una imagen lista para publicar con los datos que tú elijas.</p>
       </div>
     </div>
-    <div class="share-preview">
-      <div class="share-preview-top">
-        <span class="brand-lockup"
-          ><span class="brand-mark">A</span><span>ALON <em>SPORTS</em></span></span
-        ><span>ENLACE PÚBLICO</span>
+    <div class="share-studio-layout">
+      <div class="share-editor-column">
+        <article class="share-control-card">
+          <div class="share-card-heading">
+            <div>
+              <p class="eyebrow">1 · PLANTILLA</p>
+              <h2>Elige una tarjeta</h2>
+            </div>
+            <span class="share-step">{{ selectedPreset().label }}</span>
+          </div>
+          <div class="share-preset-grid">
+            @for (preset of presets; track preset.id) {
+              <button type="button" class="share-preset" [class.selected]="preset.id === presetId()" (click)="presetId.set(preset.id)">
+                <span class="share-preset-art" [class]="'preset-art-' + preset.id">
+                  <i></i><b></b><em></em>
+                </span>
+                <strong>{{ preset.label }}</strong><small>{{ preset.description }}</small>
+              </button>
+            }
+          </div>
+        </article>
+
+        <article class="share-control-card">
+          <div class="share-card-heading">
+            <div>
+              <p class="eyebrow">2 · COMPOSICIÓN</p>
+              <h2>Ajusta el lienzo</h2>
+            </div>
+          </div>
+          <div class="share-field-group">
+            <span class="share-label">TAMAÑO</span>
+            <div class="segmented-control">
+              @for (size of sizes; track size.id) {
+                <button type="button" [class.active]="cardSize() === size.id" (click)="cardSize.set(size.id)"><mat-icon>{{ size.icon }}</mat-icon>{{ size.label }}</button>
+              }
+            </div>
+          </div>
+          <div class="share-field-group">
+            <span class="share-label">ESTILO DEL MAPA</span>
+            <div class="map-style-row">
+              @for (map of mapStyles; track map.id) {
+                <button type="button" class="map-style-option" [class.active]="mapStyle() === map.id" (click)="mapStyle.set(map.id)">
+                  <span [class]="'map-style-swatch map-style-' + map.id"><i></i></span><small>{{ map.label }}</small>
+                </button>
+              }
+            </div>
+          </div>
+          <div class="share-field-group two-fields">
+            <label><span class="share-label">POSICIÓN DEL MAPA</span>
+              <select [(ngModel)]="mapPosition"><option value="background">Fondo completo</option><option value="top">Parte superior</option><option value="bottom">Parte inferior</option></select>
+            </label>
+            <label><span class="share-label">ALINEACIÓN DEL TEXTO</span>
+              <select [(ngModel)]="textPosition"><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select>
+            </label>
+          </div>
+        </article>
+
+        <article class="share-control-card">
+          <div class="share-card-heading">
+            <div>
+              <p class="eyebrow">3 · INFORMACIÓN</p>
+              <h2>¿Qué quieres mostrar?</h2>
+            </div>
+            <button type="button" class="text-button" (click)="toggleAllFields()">{{ allFieldsSelected() ? 'Ocultar todo' : 'Mostrar todo' }}</button>
+          </div>
+          <div class="share-info-grid">
+            @for (field of fieldOptions; track field.id) {
+              <label class="share-check" [class.checked]="fields[field.id]">
+                <input type="checkbox" [(ngModel)]="fields[field.id]" />
+                <span class="share-check-box"><mat-icon>check</mat-icon></span>
+                <span><strong>{{ field.label }}</strong><small>{{ field.description }}</small></span>
+              </label>
+            }
+          </div>
+        </article>
+
+        <article class="share-control-card visibility-card">
+          <div class="share-card-heading">
+            <div><p class="eyebrow">PRIVACIDAD</p><h2>Protege tu recorrido</h2></div>
+          </div>
+          <button class="share-option share-option-button" type="button" (click)="hideStart = !hideStart">
+            <span class="settings-icon"><mat-icon>visibility_off</mat-icon></span><span><strong>Ocultar punto de inicio</strong><small>Difumina los primeros metros de tu ruta</small></span><span class="toggle" [class.on]="hideStart"><i></i></span>
+          </button>
+        </article>
       </div>
-      <strong>Actividad {{ id }}</strong>
-      <div class="share-preview-stats">
-        <span>Protección de privacidad</span
-        ><span>{{ shareUrl() ? 'Enlace activo' : 'Sin enlace activo' }}</span>
-      </div>
-      <div class="share-preview-route"></div>
+
+      <aside class="share-preview-column">
+        <div class="share-preview-sticky">
+          <div class="share-preview-header"><div><p class="eyebrow">VISTA PREVIA</p><h2>Así se verá tu tarjeta</h2></div><span class="live-dot">EN DIRECTO</span></div>
+          <div [class]="'share-card-preview ' + previewClasses()" [style.--preview-align]="textPosition" [style.--preview-justify]="textPosition === 'left' ? 'flex-start' : textPosition === 'right' ? 'flex-end' : 'center'">
+            <div [class]="'share-card-map map-bg-' + mapStyle()">
+              <svg viewBox="0 0 360 480" preserveAspectRatio="none" aria-label="Previsualización de la ruta">
+                <path class="preview-road road-one" d="M-30 120 C 50 80, 84 165, 145 140 S 265 65, 395 100" />
+                <path class="preview-road road-two" d="M-40 350 C 58 305, 98 380, 175 322 S 300 245, 400 280" />
+                <path class="preview-route" [attr.d]="previewRoutePath()" />
+                @if (hideStart) { <circle class="preview-hide-zone" cx="54" cy="365" r="34" /> }
+                <circle class="preview-start" cx="54" cy="365" r="7" />
+                <circle class="preview-finish" cx="306" cy="92" r="8" />
+              </svg>
+            </div>
+            <div class="share-card-overlay"></div>
+            <div class="share-card-content">
+              @if (fields.brand) { <div class="share-card-brand"><span class="brand-mark">A</span><span>ALON <em>SPORTS</em></span></div> }
+              @if (fields.title) { <div class="share-card-title"><span>{{ sportLabel() }}</span><h3>{{ activity().name }}</h3></div> }
+              @if (fields.date) { <p class="share-card-date">{{ activity().date }} · {{ activity().location }}</p> }
+              @if (fields.stats) {
+                <div class="share-card-stats">
+                  @if (fields.distance) { <span><strong>{{ activity().distance.toFixed(2) }}</strong><small>KM</small></span> }
+                  @if (fields.time) { <span><strong>{{ durationLabel() }}</strong><small>TIEMPO</small></span> }
+                  @if (fields.pace) { <span><strong>{{ activity().pace }}</strong><small>{{ activity().sport_type === 'Ride' ? 'VELOCIDAD' : 'RITMO' }}</small></span> }
+                  @if (fields.elevation) { <span><strong>{{ activity().elevation }}</strong><small>DESNIVEL M</small></span> }
+                </div>
+              }
+              @if (fields.footer) { <div class="share-card-footer"><span>Recorrido GPS</span><span>ALON SPORTS · {{ activity().sport_type.toUpperCase() }}</span></div> }
+            </div>
+          </div>
+          <div class="share-preview-actions">
+            <button class="primary-button full" type="button" (click)="downloadCard()"><mat-icon>download</mat-icon>{{ generatedImage() ? 'Descargar tarjeta PNG' : 'Generar tarjeta PNG' }}</button>
+            <button class="outline-button full" type="button" (click)="nativeShareImage()"><mat-icon>ios_share</mat-icon>Compartir imagen</button>
+          </div>
+          @if (generatedImage()) { <p class="success-message share-generated-message"><mat-icon>check_circle</mat-icon>Imagen generada. Puedes descargarla o compartirla.</p> }
+          @if (loading()) { <p class="share-loading"><mat-icon>sync</mat-icon> Cargando datos de la actividad…</p> }
+        </div>
+      </aside>
     </div>
-    <div class="settings-group">
-      <p class="eyebrow">VISIBILIDAD</p>
-      <button
-        class="share-option share-option-button"
-        type="button"
-        (click)="hideStart = !hideStart"
-      >
-        <span class="settings-icon"><mat-icon>visibility_off</mat-icon></span
-        ><span
-          ><strong>Ocultar punto de inicio</strong><small>Protege tu ubicación exacta</small></span
-        ><span class="toggle" [class.on]="hideStart"><i></i></span>
-      </button>
-      <div class="share-option">
-        <span class="settings-icon"><mat-icon>schedule</mat-icon></span
-        ><span><strong>Caducidad del enlace</strong><small>31 diciembre 2026</small></span>
+
+    <section class="generated-cards-section">
+      <div class="section-heading compact"><div><p class="eyebrow">TUS TARJETAS</p><h2>Genera distintas versiones</h2></div><span class="share-card-count">{{ savedCards().length }} guardadas</span></div>
+      <div class="generated-card-list">
+        @for (card of savedCards(); track card.id) {
+          <button type="button" class="generated-card-item" (click)="restoreCard(card)"><span class="generated-card-thumb" [class]="'thumb-' + card.presetId"><mat-icon>{{ card.icon }}</mat-icon></span><span><strong>{{ card.label }}</strong><small>{{ card.sizeLabel }} · {{ card.mapLabel }}</small></span><mat-icon>edit</mat-icon></button>
+        } @empty { <div class="empty-generated-cards"><mat-icon>collections</mat-icon><span>Aquí aparecerán tus versiones cuando generes más de una tarjeta.</span></div> }
       </div>
-    </div>
-    <button class="primary-button full" type="button" (click)="createLink()" [disabled]="saving()">
-      <mat-icon>{{ shareUrl() ? 'content_copy' : 'link' }}</mat-icon>
-      {{ saving() ? 'Generando…' : shareUrl() ? 'Copiar enlace' : 'Crear enlace público' }}
-    </button>
-    @if (shareUrl()) {
-      <p class="share-url">{{ shareUrl() }}</p>
-    }
-    <button class="outline-button full share-native" type="button" (click)="nativeShare()">
-      <mat-icon>share</mat-icon> Compartir en otra app
-    </button>
-    @if (message()) {
-      <p class="success-message">{{ message() }}</p>
-    }
-    @if (error()) {
-      <p class="api-error">{{ error() }}</p>
-    }
+    </section>
+
+    <section class="public-share-section">
+      <div class="section-heading compact"><div><p class="eyebrow">ENLACE PÚBLICO</p><h2>Comparte también la actividad</h2></div></div>
+      <p class="muted">Crea un enlace para quien quiera consultar todos los detalles de la salida.</p>
+      <button class="primary-button" type="button" (click)="createLink()" [disabled]="saving()"><mat-icon>{{ shareUrl() ? 'content_copy' : 'link' }}</mat-icon>{{ saving() ? 'Generando…' : shareUrl() ? 'Copiar enlace público' : 'Crear enlace público' }}</button>
+      @if (shareUrl()) { <p class="share-url">{{ shareUrl() }}</p> }
+      <button class="outline-button share-native" type="button" (click)="nativeShare()"><mat-icon>share</mat-icon>Compartir enlace en otra app</button>
+      @if (message()) { <p class="success-message">{{ message() }}</p> }
+      @if (error()) { <p class="api-error">{{ error() }}</p> }
+    </section>
+    <canvas #exportCanvas class="share-export-canvas" aria-hidden="true"></canvas>
   </section>`,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SharePage {
   private readonly route = inject(ActivatedRoute);
   private readonly api = inject(ApiService);
+  private readonly data = inject(SportsDataStore);
+  @ViewChild('exportCanvas') private exportCanvas?: ElementRef<HTMLCanvasElement>;
   readonly id = this.route.snapshot.paramMap.get('id') ?? '';
+  readonly detail = signal<Record<string, any> | null>(null);
+  readonly loading = signal(true);
   readonly share = signal<ApiShare | null>(null);
   readonly saving = signal(false);
   readonly error = signal('');
   readonly message = signal('');
+  readonly generatedImage = signal('');
+  readonly presetId = signal<'route' | 'stats' | 'minimal'>('route');
+  readonly cardSize = signal<'square' | 'portrait' | 'story'>('square');
+  readonly mapStyle = signal<'night' | 'paper' | 'terrain'>('night');
+  readonly savedCards = signal<Array<{ id: number; label: string; icon: string; presetId: string; sizeLabel: string; mapLabel: string; config: any }>>([]);
+  readonly presets = [
+    { id: 'route' as const, label: 'Ruta protagonista', description: 'Mapa a pantalla completa' },
+    { id: 'stats' as const, label: 'Datos destacados', description: 'Tus métricas en primer plano' },
+    { id: 'minimal' as const, label: 'Minimal', description: 'Limpia y fácil de leer' },
+  ];
+  readonly sizes = [
+    { id: 'square' as const, label: 'Cuadrada', icon: 'crop_square' },
+    { id: 'portrait' as const, label: 'Vertical', icon: 'crop_portrait' },
+    { id: 'story' as const, label: 'Story', icon: 'phone_android' },
+  ];
+  readonly mapStyles = [
+    { id: 'night' as const, label: 'Noche' },
+    { id: 'paper' as const, label: 'Papel' },
+    { id: 'terrain' as const, label: 'Relieve' },
+  ];
+  readonly fieldOptions = [
+    { id: 'brand', label: 'Marca', description: 'Alon Sports' },
+    { id: 'title', label: 'Nombre', description: 'Nombre de la actividad' },
+    { id: 'date', label: 'Fecha y lugar', description: 'Cuándo y dónde' },
+    { id: 'stats', label: 'Bloque de métricas', description: 'Resumen principal' },
+    { id: 'distance', label: 'Distancia', description: 'Kilómetros recorridos' },
+    { id: 'time', label: 'Tiempo', description: 'Tiempo en movimiento' },
+    { id: 'pace', label: 'Ritmo / velocidad', description: 'Tu promedio' },
+    { id: 'elevation', label: 'Desnivel', description: 'Metros positivos' },
+    { id: 'footer', label: 'Pie de tarjeta', description: 'Detalles adicionales' },
+  ] as const;
+  fields: { brand: boolean; title: boolean; date: boolean; stats: boolean; distance: boolean; time: boolean; pace: boolean; elevation: boolean; footer: boolean } = { brand: true, title: true, date: true, stats: true, distance: true, time: true, pace: true, elevation: false, footer: true };
+  mapPosition: 'background' | 'top' | 'bottom' = 'background';
+  textPosition: 'left' | 'center' | 'right' = 'left';
   hideStart = true;
   readonly shareUrl = computed(() => this.share()?.url ?? '');
+  readonly activity = computed(() => this.detail() ? this.data.toActivity(this.detail()?.['activity'] ?? this.detail()) : (this.data.activities().find((item) => item.id === this.id) ?? ACTIVITIES[0]));
+  readonly routePoints = computed<[number, number][]>(() => {
+    const map = this.detail()?.['map'] as NormalizedMap | undefined;
+    const stream = this.detail()?.['streams']?.['latlng'];
+    const raw = map?.points?.length ? map.points : stream?.data;
+    return Array.isArray(raw) && raw.length > 1 ? raw as [number, number][] : DEFAULT_ROUTE;
+  });
+  readonly sportLabel = computed(() => this.activity().sport_type === 'Ride' ? 'Ciclismo' : this.activity().sport_type === 'Walk' ? 'Caminar' : 'Correr');
+  readonly selectedPreset = computed(() => this.presets.find((preset) => preset.id === this.presetId()) ?? this.presets[0]);
+  previewClasses() {
+    return `share-card-size-${this.cardSize()} share-preset-${this.presetId()} share-map-position-${this.mapPosition}`;
+  }
+  allFieldsSelected() {
+    return this.fieldOptions.every((field) => this.fields[field.id]);
+  }
+  readonly previewRoutePath = computed(() => this.routePath(this.routePoints(), 360, 480));
   constructor() {
+    this.data.loadActivities();
+    this.api.activity(this.id).subscribe({ next: (value) => this.detail.set(value), error: () => this.loading.set(false), complete: () => this.loading.set(false) });
     this.api
       .getShare(this.id)
       .subscribe({ next: (value) => this.share.set(value), error: () => undefined });
+  }
+  durationLabel() {
+    const seconds = Number(this.activity().moving_time_seconds ?? this.activity().moving_time * 60);
+    return seconds > 0 ? `${Math.floor(seconds / 3600).toString().padStart(2, '0')}:${Math.floor((seconds % 3600) / 60).toString().padStart(2, '0')}` : '—';
+  }
+  toggleAllFields() {
+    const next = !this.allFieldsSelected();
+    this.fieldOptions.forEach((field) => this.fields[field.id] = next);
+  }
+  restoreCard(card: { config: any }) {
+    const config = card.config;
+    this.presetId.set(config.presetId);
+    this.cardSize.set(config.cardSize);
+    this.mapStyle.set(config.mapStyle);
+    this.mapPosition = config.mapPosition;
+    this.textPosition = config.textPosition;
+    this.fields = { ...config.fields };
+    this.hideStart = config.hideStart;
+    this.generatedImage.set('');
+  }
+  private routePath(points: [number, number][], width: number, height: number) {
+    const coords = points.map(([lat, lng]) => ({ lat, lng }));
+    const minLat = Math.min(...coords.map((point) => point.lat));
+    const maxLat = Math.max(...coords.map((point) => point.lat));
+    const minLng = Math.min(...coords.map((point) => point.lng));
+    const maxLng = Math.max(...coords.map((point) => point.lng));
+    const pad = 42;
+    const latRange = Math.max(maxLat - minLat, 0.0001);
+    const lngRange = Math.max(maxLng - minLng, 0.0001);
+    return coords.map((point, index) => {
+      const x = pad + ((point.lng - minLng) / lngRange) * (width - pad * 2);
+      const y = height - pad - ((point.lat - minLat) / latRange) * (height - pad * 2);
+      return `${index ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    }).join(' ');
+  }
+  downloadCard() {
+    const canvas = this.exportCanvas?.nativeElement;
+    if (!canvas) return;
+    const dimensions = this.cardSize() === 'square' ? [1080, 1080] : this.cardSize() === 'portrait' ? [1080, 1350] : [1080, 1920];
+    canvas.width = dimensions[0]; canvas.height = dimensions[1];
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const width = canvas.width, height = canvas.height;
+    const colors = this.mapStyle() === 'night' ? { bg: '#121912', line: '#c9f45b', road: '#31432d', text: '#f3f7ee', muted: '#9dab98' } : this.mapStyle() === 'paper' ? { bg: '#e9e5d7', line: '#263622', road: '#bdc7ad', text: '#182019', muted: '#54614c' } : { bg: '#3c5143', line: '#e4f0b5', road: '#829a7a', text: '#f7fbeb', muted: '#d1dcc9' };
+    ctx.fillStyle = colors.bg; ctx.fillRect(0, 0, width, height);
+    const mapTop = this.mapPosition === 'bottom' ? height * .38 : 0;
+    const mapHeight = this.mapPosition === 'background' ? height : height * .62;
+    ctx.save(); ctx.globalAlpha = this.mapStyle() === 'paper' ? .42 : .32;
+    for (let index = -2; index < 12; index += 1) { ctx.strokeStyle = colors.road; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(index * 180, mapTop); ctx.lineTo(index * 180 + 500, mapTop + mapHeight); ctx.stroke(); }
+    ctx.restore();
+    const routeCoords = this.routePoints().map(([lat, lng]) => ({ lat, lng }));
+    const minLat = Math.min(...routeCoords.map((point) => point.lat)), maxLat = Math.max(...routeCoords.map((point) => point.lat));
+    const minLng = Math.min(...routeCoords.map((point) => point.lng)), maxLng = Math.max(...routeCoords.map((point) => point.lng));
+    const routePad = width * .12, latRange = Math.max(maxLat - minLat, .0001), lngRange = Math.max(maxLng - minLng, .0001);
+    const routeXY = routeCoords.map((point) => [routePad + ((point.lng - minLng) / lngRange) * (width - routePad * 2), mapTop + mapHeight - routePad - ((point.lat - minLat) / latRange) * (mapHeight - routePad * 2)] as [number, number]);
+    ctx.beginPath(); routeXY.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = 'rgba(0,0,0,.42)'; ctx.lineWidth = width * .025; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.beginPath(); routeXY.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = colors.line; ctx.lineWidth = width * .012; ctx.stroke();
+    if (this.hideStart) { const [x, y] = routeXY[0]; ctx.fillStyle = colors.bg; ctx.globalAlpha = .92; ctx.beginPath(); ctx.arc(x, y, width * .08, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+    const [startX, startY] = routeXY[0], [endX, endY] = routeXY.at(-1)!; ctx.fillStyle = colors.bg; ctx.beginPath(); ctx.arc(startX, startY, width * .022, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = colors.line; ctx.beginPath(); ctx.arc(endX, endY, width * .026, 0, Math.PI * 2); ctx.fill();
+    const contentY = this.mapPosition === 'top' ? height * .67 : height * .12; const alignX = this.textPosition === 'center' ? width / 2 : this.textPosition === 'right' ? width * .88 : width * .12; ctx.textAlign = this.textPosition as CanvasTextAlign; ctx.fillStyle = colors.text;
+    if (this.fields['brand']) { ctx.font = `800 ${Math.round(width * .022)}px Arial`; ctx.fillText('ALON SPORTS', alignX, contentY); }
+    let lineY = contentY + width * .08; if (this.fields['title']) { ctx.font = `800 ${Math.round(width * .052)}px Arial`; ctx.fillText(this.activity().name, alignX, lineY); lineY += width * .045; }
+    if (this.fields['date']) { ctx.fillStyle = colors.muted; ctx.font = `${Math.round(width * .018)}px Arial`; ctx.fillText(`${this.activity().date} · ${this.activity().location}`, alignX, lineY); lineY += width * .08; }
+    if (this.fields['stats']) { const metrics: Array<[string, string]> = []; if (this.fields['distance']) metrics.push([this.activity().distance.toFixed(2), 'KM']); if (this.fields['time']) metrics.push([this.durationLabel(), 'TIEMPO']); if (this.fields['pace']) metrics.push([this.activity().pace, this.activity().sport_type === 'Ride' ? 'VELOCIDAD' : 'RITMO']); if (this.fields['elevation']) metrics.push([String(this.activity().elevation), 'DESNIVEL M']); metrics.forEach(([value, label], index) => { const spread = metrics.length > 1 ? width * .22 : 0; const x = this.textPosition === 'center' ? width / 2 + (index - (metrics.length - 1) / 2) * spread : alignX + index * width * .18; ctx.fillStyle = colors.text; ctx.font = `800 ${Math.round(width * .028)}px Arial`; ctx.fillText(value, x, lineY); ctx.fillStyle = colors.muted; ctx.font = `800 ${Math.round(width * .012)}px Arial`; ctx.fillText(label, x, lineY + width * .026); }); }
+    if (this.fields['footer']) { ctx.fillStyle = colors.muted; ctx.font = `800 ${Math.round(width * .012)}px Arial`; ctx.fillText('ALON SPORTS · ACTIVIDAD GPS', alignX, height - width * .08); }
+    const image = canvas.toDataURL('image/png'); this.generatedImage.set(image);
+    const link = document.createElement('a'); link.href = image; link.download = `alon-sports-${this.id}-${this.presetId()}.png`; link.click();
+    this.saveCurrentCard();
+  }
+  private saveCurrentCard() {
+    const preset = this.selectedPreset(); const size = this.sizes.find((item) => item.id === this.cardSize()); const map = this.mapStyles.find((item) => item.id === this.mapStyle());
+    this.savedCards.update((cards) => [...cards.filter((card) => card.presetId !== preset.id || card.sizeLabel !== size?.label), { id: Date.now(), label: preset.label, icon: this.cardSize() === 'story' ? 'phone_android' : this.cardSize() === 'portrait' ? 'crop_portrait' : 'crop_square', presetId: preset.id, sizeLabel: size?.label ?? '', mapLabel: map?.label ?? '', config: { presetId: this.presetId(), cardSize: this.cardSize(), mapStyle: this.mapStyle(), mapPosition: this.mapPosition, textPosition: this.textPosition, fields: { ...this.fields }, hideStart: this.hideStart } }]);
+  }
+  nativeShareImage() {
+    const url = this.generatedImage(); if (!url) { this.downloadCard(); return; }
+    if (typeof navigator !== 'undefined' && navigator.share) fetch(url).then((response) => response.blob()).then((blob) => { const file = new File([blob], `alon-sports-${this.id}.png`, { type: 'image/png' }); return navigator.share({ title: this.activity().name, files: [file] }); }).catch(() => undefined);
+    else this.downloadCard();
   }
   createLink() {
     if (this.shareUrl()) {
@@ -3036,7 +3298,16 @@ export class LiveSegmentsPage {
         >
       </nav>
       @if (section() === 'overview') {
-        <app-route-map [routePoints]="routePoints()" />
+        <app-route-map
+          [routePoints]="routePoints()"
+          [activityName]="activity().name"
+          [sportLabel]="sportLabel()"
+          [location]="activity().location"
+          [distance]="activity().distance"
+          [duration]="formatDuration(activity().moving_time_seconds)"
+          [pace]="activity().pace"
+          [elevation]="activity().elevation"
+        />
         <div class="detail-grid summary-data">
           <article class="detail-card">
             <span>TIEMPO TOTAL</span
@@ -3150,7 +3421,16 @@ export class LiveSegmentsPage {
           }
         </div>
       } @else if (section() === 'charts') {
-        <app-route-map [routePoints]="routePoints()" />
+        <app-route-map
+          [routePoints]="routePoints()"
+          [activityName]="activity().name"
+          [sportLabel]="sportLabel()"
+          [location]="activity().location"
+          [distance]="activity().distance"
+          [duration]="formatDuration(activity().moving_time_seconds)"
+          [pace]="activity().pace"
+          [elevation]="activity().elevation"
+        />
         <div class="insight-card">
           <span class="insight-icon"><mat-icon>show_chart</mat-icon></span>
           <div>
@@ -3587,15 +3867,15 @@ export class LiveActivityPage {
       ? raw.map((item) => this.data.toSegment(item))
       : SEGMENTS;
   });
-  readonly routePoints = computed<L.LatLngExpression[]>(() => {
+  readonly routePoints = computed<[number, number][]>(() => {
     const map = this.detail()?.['map'] as NormalizedMap | undefined;
     const stream = this.detail()?.['streams']?.['latlng'];
     const raw = map?.points?.length ? map.points : stream?.data;
-    return Array.isArray(raw) && raw.length > 1 ? (raw as L.LatLngExpression[]) : DEFAULT_ROUTE;
+    return Array.isArray(raw) && raw.length > 1 ? (raw as [number, number][]) : DEFAULT_ROUTE;
   });
   readonly streamsLabel = computed(() =>
     this.detail()?.['map']?.point_count
-      ? `Mapa normalizado · ${this.detail()?.['map']?.point_count} puntos${this.detail()?.['map']?.simplified ? ' simplificados' : ''}.`
+      ? `Mapa normalizado${this.detail()?.['map']?.simplified ? ' y simplificado' : ''}.`
       : 'La actividad no incluye mapa GPS disponible.',
   );
   readonly sportLabel = computed(() =>

@@ -2,8 +2,10 @@ import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, AfterViewIni
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
-import * as L from 'leaflet';
+import type * as maplibregl from 'maplibre-gl';
+import type { GeoJSON as GeoJSONData } from 'geojson';
 import { Activity, ApiService, SportsDataStore } from './app';
+import { MAP_STYLE, distanceBetween, toMapLibreCoordinates } from './map-config';
 
 const FALLBACK_ROUTE: [number, number][] = [
   [40.4143, -3.6996], [40.4137, -3.6978], [40.4148, -3.6959], [40.4164, -3.6945],
@@ -18,8 +20,8 @@ function clamp(value: number, min: number, max: number) { return Math.max(min, M
   imports: [MatIconModule],
   template: `
     <div class="segment-selection">
-      <div class="selection-map leaflet-shell">
-        <div #map class="leaflet-host"></div>
+      <div class="selection-map maplibre-shell">
+        <div #map class="maplibre-host"></div>
         <div class="selection-map-topline"><span class="live-dot"></span> PREVISUALIZACIÓN DEL TRAMO <span class="topline-hint">Arrastra los marcadores o pulsa el recorrido</span></div>
         <div class="selection-handles">
           <button type="button" [class.active]="activeHandle() === 'start'" (click)="activeHandle.set('start')"><span class="handle-number">1</span><span><small>INICIO</small><strong>{{ formatDistance(startDistance()) }}</strong></span><mat-icon>my_location</mat-icon></button>
@@ -71,22 +73,31 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   readonly endRatio = computed(() => this.ratio(this.endIndex()));
   readonly currentRatio = computed(() => this.ratio(this.playIndex()));
   readonly selectionWidth = computed(() => Math.max(0, this.endRatio() - this.startRatio()));
-  private map?: L.Map;
-  private routeLayer?: L.LayerGroup;
-  private markerLayer?: L.LayerGroup;
+  private map?: maplibregl.Map;
+  private maplibre?: typeof import('maplibre-gl');
+  private routeMarkers: maplibregl.Marker[] = [];
   private playbackTimer?: number;
   private readonly redraw = effect(() => { const points = this.points(); if (this.map && points.length > 1) this.drawRoute(points); });
 
-  ngAfterViewInit() {
+  async ngAfterViewInit() {
     if (typeof window === 'undefined') return;
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
-    this.map = L.map(this.mapElement.nativeElement, { zoomControl: false, attributionControl: false, layers: [osm] });
-    L.control.zoom({ position: 'bottomright' }).addTo(this.map);
-    this.routeLayer = L.layerGroup().addTo(this.map);
-    this.markerLayer = L.layerGroup().addTo(this.map);
-    this.map.on('click', event => this.selectNearest(event.latlng));
-    this.drawRoute(this.points());
-    window.setTimeout(() => this.map?.invalidateSize(), 0);
+    const maplibre = await import('maplibre-gl');
+    this.maplibre = maplibre;
+    const initial = toMapLibreCoordinates(this.points());
+    this.map = new maplibre.Map({
+      container: this.mapElement.nativeElement,
+      style: MAP_STYLE,
+      center: initial[0] ?? [-3.7038, 40.4168],
+      zoom: 13,
+      attributionControl: { compact: true },
+    });
+    this.map.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
+    this.map.addControl(new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
+    this.map.on('click', event => this.selectNearest([event.lngLat.lat, event.lngLat.lng]));
+    this.map.once('load', () => {
+      this.drawRoute(this.points());
+      window.setTimeout(() => this.map?.resize(), 0);
+    });
   }
 
   onStartInput(event: Event) { this.setStart(Number((event.target as HTMLInputElement).value)); }
@@ -94,44 +105,56 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   private setStart(value: number) { this.startChange.emit(clamp(Math.min(value, this.endIndex() - 2), 0, Math.max(0, this.maxIndex() - 2))); this.playIndex.set(Math.max(this.playIndex(), value)); }
   private setEnd(value: number) { this.endChange.emit(clamp(Math.max(value, this.startIndex() + 2), 2, this.maxIndex())); }
 
-  private selectNearest(latlng: L.LatLng) {
-    const points = this.points().map(point => L.latLng(point));
+  private selectNearest(latlng: [number, number]) {
+    const points = this.points();
     if (!this.map || !points.length) return;
     let nearest = 0; let distance = Number.POSITIVE_INFINITY;
-    points.forEach((point, index) => { const candidate = this.map!.latLngToContainerPoint(point); const click = this.map!.latLngToContainerPoint(latlng); const next = candidate.distanceTo(click); if (next < distance) { distance = next; nearest = index; } });
+    const click = this.map.project({ lng: latlng[1], lat: latlng[0] });
+    points.forEach((point, index) => { const candidate = this.map!.project({ lng: point[1], lat: point[0] }); const next = Math.hypot(candidate.x - click.x, candidate.y - click.y); if (next < distance) { distance = next; nearest = index; } });
     if (this.activeHandle() === 'start') this.setStart(nearest); else this.setEnd(nearest);
   }
 
   private drawRoute(points: [number, number][]) {
-    if (!this.map || !this.routeLayer || !this.markerLayer || points.length < 2) return;
-    this.routeLayer.clearLayers(); this.markerLayer.clearLayers();
-    const coords = points.map(point => L.latLng(point));
+    if (!this.map || !this.map.isStyleLoaded() || points.length < 2) return;
+    const coords = toMapLibreCoordinates(points);
     const start = clamp(this.startIndex(), 0, coords.length - 1); const end = clamp(this.endIndex(), start + 1, coords.length - 1);
-    L.polyline(coords, { color: '#11180f', weight: 12, opacity: .72, lineCap: 'round', lineJoin: 'round' }).addTo(this.routeLayer);
-    L.polyline(coords, { color: '#7b8770', weight: 4, opacity: .62, lineCap: 'round', lineJoin: 'round' }).addTo(this.routeLayer);
-    L.polyline(coords.slice(start, end + 1), { color: '#11180f', weight: 12, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(this.routeLayer);
-    L.polyline(coords.slice(start, end + 1), { color: '#c9f45b', weight: 6, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(this.routeLayer);
-    const startMarker = this.createMarker(coords[start], 'start', 'Inicio', index => this.setStart(index));
-    const endMarker = this.createMarker(coords[end], 'end', 'Final', index => this.setEnd(index));
-    startMarker.addTo(this.markerLayer); endMarker.addTo(this.markerLayer);
-    const playMarker = L.circleMarker(coords[clamp(this.playIndex(), 0, coords.length - 1)], { radius: 5, color: '#11180f', weight: 3, fillColor: '#ffffff', fillOpacity: 1 });
-    playMarker.addTo(this.markerLayer);
-    this.map.fitBounds(L.latLngBounds(coords), { padding: [42, 42] });
+    this.setLineSource('segment-full-route', coords);
+    this.setLineSource('segment-selected-route', coords.slice(start, end + 1));
+    const playPoint = coords[clamp(this.playIndex(), 0, coords.length - 1)];
+    this.setGeoJsonSource('segment-playhead', { type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: playPoint }, properties: {} });
+    if (!this.map.getLayer('segment-full-shadow')) {
+      this.map.addLayer({ id: 'segment-full-shadow', type: 'line', source: 'segment-full-route', paint: { 'line-color': '#11180f', 'line-width': 12, 'line-opacity': .72, 'line-blur': 1 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+      this.map.addLayer({ id: 'segment-full-line', type: 'line', source: 'segment-full-route', paint: { 'line-color': '#7b8770', 'line-width': 4, 'line-opacity': .62 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+      this.map.addLayer({ id: 'segment-selected-shadow', type: 'line', source: 'segment-selected-route', paint: { 'line-color': '#11180f', 'line-width': 12, 'line-opacity': .95, 'line-blur': 1 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+      this.map.addLayer({ id: 'segment-selected-line', type: 'line', source: 'segment-selected-route', paint: { 'line-color': '#c9f45b', 'line-width': 6, 'line-opacity': 1 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+      this.map.addLayer({ id: 'segment-playhead', type: 'circle', source: 'segment-playhead', paint: { 'circle-radius': 5, 'circle-color': '#ffffff', 'circle-stroke-color': '#11180f', 'circle-stroke-width': 3 } });
+    }
+    this.routeMarkers.forEach(marker => marker.remove());
+    this.routeMarkers = [
+      this.createMarker(points[start], 'start', 'Inicio', index => this.setStart(index)),
+      this.createMarker(points[end], 'end', 'Final', index => this.setEnd(index)),
+    ];
+    const bounds = new this.maplibre!.LngLatBounds(coords[0], coords[0]);
+    coords.slice(1).forEach(point => bounds.extend(point));
+    this.map.fitBounds(bounds, { padding: 42, maxZoom: 16, duration: 0 });
   }
 
-  private createMarker(point: L.LatLng, type: 'start' | 'end', label: string, update: (index: number) => void) {
-    const icon = L.divIcon({ className: 'segment-handle-marker', html: `<span class="handle-pin ${type}"><b>${type === 'start' ? '1' : '2'}</b><em>${label}</em></span>`, iconSize: [42, 42], iconAnchor: [21, 21] });
-    const marker = L.marker(point, { icon, draggable: true });
+  private createMarker(point: [number, number], type: 'start' | 'end', label: string, update: (index: number) => void) {
+    const icon = document.createElement('span');
+    icon.className = `segment-handle-marker handle-pin ${type}`;
+    icon.innerHTML = `<b>${type === 'start' ? '1' : '2'}</b><em>${label}</em>`;
+    const marker = new this.maplibre!.Marker({ element: icon, draggable: true }).setLngLat([point[1], point[0]]).addTo(this.map!);
     marker.on('dragstart', () => this.activeHandle.set(type));
-    marker.on('dragend', event => { const dragged = event.target as L.Marker; const index = this.nearestIndex(dragged.getLatLng()); update(index); });
-    marker.bindTooltip(label, { direction: 'top', offset: [0, -17] });
+    marker.on('dragend', () => { const dragged = marker.getLngLat(); const index = this.nearestIndex([dragged.lat, dragged.lng]); update(index); });
     return marker;
   }
 
-  private nearestIndex(latlng: L.LatLng) { const points = this.points().map(point => L.latLng(point)); const distances = points.map(point => point.distanceTo(latlng)); return distances.indexOf(Math.min(...distances)); }
+  private nearestIndex(latlng: [number, number]) { const distances = this.points().map(point => distanceBetween(point, latlng)); return distances.indexOf(Math.min(...distances)); }
   private ratio(index: number) { return this.maxIndex() ? clamp(index / this.maxIndex() * 100, 0, 100) : 0; }
   private distanceAt(index: number) { return this.routeDistance(this.points().slice(0, clamp(index + 1, 1, this.points().length))); }
-  private routeDistance(points: L.LatLngExpression[]) { return points.slice(1).reduce((total, point, index) => total + L.latLng(points[index]).distanceTo(L.latLng(point)), 0); }
+  private routeDistance(points: [number, number][]) { return points.slice(1).reduce((total, point, index) => total + distanceBetween(points[index], point), 0); }
+  private setLineSource(id: string, coordinates: [number, number][]) { this.setGeoJsonSource(id, { type: 'Feature' as const, geometry: { type: 'LineString' as const, coordinates }, properties: {} }); }
+  private setGeoJsonSource(id: string, data: unknown) { if (!this.map) return; const source = this.map.getSource(id) as maplibregl.GeoJSONSource | undefined; if (source) source.setData(data as GeoJSONData); else this.map.addSource(id, { type: 'geojson', data: data as GeoJSONData }); }
   formatDistance(meters: number) { return meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${Math.round(meters)} m`; }
   formatTime(seconds: number) { const value = Math.max(0, Math.round(seconds)); return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`; }
 
@@ -142,7 +165,7 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
     this.playbackTimer = window.setInterval(() => { const next = this.playIndex() + 1; if (next >= this.endIndex()) { this.playIndex.set(this.endIndex()); this.stopPlayback(); } else this.playIndex.set(next); }, 180);
   }
   private stopPlayback() { this.playing.set(false); if (this.playbackTimer) window.clearInterval(this.playbackTimer); this.playbackTimer = undefined; }
-  ngOnDestroy() { this.stopPlayback(); this.redraw.destroy(); this.map?.remove(); }
+  ngOnDestroy() { this.stopPlayback(); this.redraw.destroy(); this.routeMarkers.forEach(marker => marker.remove()); this.map?.remove(); }
 }
 
 @Component({
@@ -217,7 +240,7 @@ export class SegmentCreatorPage {
 
   setStart(index: number) { this.start = clamp(index, 0, Math.max(0, this.end - 2)); this.saved.set(false); }
   setEnd(index: number) { this.end = clamp(index, this.start + 2, this.routePoints().length - 1); this.saved.set(false); }
-  private distanceAt(index: number) { return this.routePoints().slice(0, clamp(index + 1, 1, this.routePoints().length)).slice(1).reduce((total, point, offset) => total + L.latLng(this.routePoints()[offset]).distanceTo(L.latLng(point)), 0); }
+  private distanceAt(index: number) { return this.routePoints().slice(0, clamp(index + 1, 1, this.routePoints().length)).slice(1).reduce((total, point, offset) => total + distanceBetween(this.routePoints()[offset], point), 0); }
   formatDistance(meters: number) { return meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${Math.round(meters)} m`; }
 
   save() {
