@@ -628,11 +628,14 @@ export class AuthStore {
       error: () => this.error.set('No se ha podido iniciar la conexión con Strava.'),
     });
   }
-  shouldRecoverPwaSession() {
+  isStandalonePwa() {
     if (typeof window === 'undefined') return false;
-    const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+    return window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-    return standalone && window.localStorage.getItem(this.pwaLoginMarker) === '1';
+  }
+  shouldRecoverPwaSession() {
+    if (!this.isStandalonePwa() || typeof window === 'undefined') return false;
+    return window.localStorage.getItem(this.pwaLoginMarker) === '1';
   }
   bridgePwaSession() {
     if (typeof window === 'undefined') return;
@@ -941,7 +944,7 @@ export class LoginPage {
     } else if (result === 'success') {
       this.auth.refreshSession().subscribe((authenticated) => {
         if (authenticated) this.router.navigateByUrl('/app/dashboard', { replaceUrl: true });
-        else if (!bridge && this.auth.shouldRecoverPwaSession()) this.auth.bridgePwaSession();
+        else if (!bridge && this.auth.isStandalonePwa()) this.auth.bridgePwaSession();
         else {
           if (bridge) this.auth.clearPwaLoginMarker();
           this.auth.setError('Strava se conectó, pero no se ha podido recuperar la sesión.');
@@ -1531,7 +1534,7 @@ export class ActivityCard {
       </div>
       <div class="stats-grid">
         <article class="stat-card">
-          <span class="stat-label">DISTANCIA</span><strong>56.8 <small>km</small></strong
+          <span class="stat-label">DISTANCIA</span><strong>56.8 <small>km</small></strong>
         </article>
         <article class="stat-card">
           <span class="stat-label">TIEMPO EN MOVIMIENTO</span
