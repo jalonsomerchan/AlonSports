@@ -3069,252 +3069,59 @@ export class LiveSegmentsPage {
               <h2>Respecto a tu media</h2>
             </div>
           </div>
-          <div class="comparison-grid">
-            @for (comparison of comparisons(); track comparison.key) {
-              <article class="comparison-card">
-                <div class="comparison-heading">
-                  <div>
-                    <h3>{{ comparison.label }}</h3>
-                    <span>{{ comparison.activities }} salidas</span>
-                  </div>
-                  <mat-icon>compare_arrows</mat-icon>
+          <p class="comparison-explainer">
+            Tu salida queda en una sola columna. En cada periodo puedes ver la media, la diferencia
+            real y cuánto se separa del comportamiento habitual.
+          </p>
+          @if (comparisons().length) {
+            <div class="comparison-table-wrap">
+              <div class="comparison-table" aria-label="Comparativa con tus medias">
+                <div class="comparison-table-row comparison-table-head">
+                  <span>Métrica</span>
+                  <span>Esta salida</span>
+                  @for (comparison of comparisons(); track comparison.key) {
+                    <span>
+                      <strong>{{ comparison.label }}</strong>
+                      <small>{{ comparison.activities }} salidas</small>
+                    </span>
+                  }
                 </div>
-                <div class="comparison-list">
-                  <div>
-                    <span
-                      >Distancia<small
-                        >Media: {{ comparisonAverageLabel(comparison, 'distance', 'km') }}</small
-                      ></span
-                    ><strong>{{ activity().distance.toFixed(1) }} km</strong
-                    ><b
-                      class="comparison-delta"
-                      [class.above]="
-                        comparisonDelta(activity().distance, comparison, 'distance') > 0
-                      "
-                      [class.below]="
-                        comparisonDelta(activity().distance, comparison, 'distance') < 0
-                      "
-                      >{{ comparisonDeltaLabel(activity().distance, comparison, 'distance') }}</b
-                    >
+                @for (row of comparisonRows; track row.key) {
+                  <div class="comparison-table-row">
+                    <span class="comparison-metric">
+                      <mat-icon>{{ row.icon }}</mat-icon>
+                      <strong>{{ row.label }}</strong>
+                      <small>{{ row.context }}</small>
+                    </span>
+                    <span class="comparison-current">
+                      <strong>{{ comparisonCurrentLabel(row.key) }}</strong>
+                      <small>Tu dato</small>
+                    </span>
+                    @for (comparison of comparisons(); track comparison.key) {
+                      <span class="comparison-reference">
+                        <small>Media {{ comparisonAverageLabel(comparison, row.key, row.unit) }}</small>
+                        <b
+                          [class.above]="comparisonDelta(comparisonCurrentValue(row.key), comparison, row.key) > 0"
+                          [class.below]="comparisonDelta(comparisonCurrentValue(row.key), comparison, row.key) < 0"
+                        >{{ comparisonDeltaAbsoluteLabel(comparisonCurrentValue(row.key), comparison, row.key, row.unit) }}</b>
+                        <em
+                          [class.above]="comparisonDelta(comparisonCurrentValue(row.key), comparison, row.key) > 0"
+                          [class.below]="comparisonDelta(comparisonCurrentValue(row.key), comparison, row.key) < 0"
+                        >{{ comparisonDeltaSummary(comparisonCurrentValue(row.key), comparison, row.key) }}</em>
+                      </span>
+                    }
                   </div>
-                  <div>
-                    <span
-                      >Tiempo en movimiento<small
-                        >Media: {{ comparisonAverageLabel(comparison, 'moving_time', '') }}</small
-                      ></span
-                    ><strong>{{ formatDuration(activity().moving_time_seconds) }}</strong
-                    ><b
-                      class="comparison-delta"
-                      [class.above]="
-                        comparisonDelta(activity().moving_time_seconds, comparison, 'moving_time') >
-                        0
-                      "
-                      [class.below]="
-                        comparisonDelta(activity().moving_time_seconds, comparison, 'moving_time') <
-                        0
-                      "
-                      >{{
-                        comparisonDeltaLabel(
-                          activity().moving_time_seconds,
-                          comparison,
-                          'moving_time'
-                        )
-                      }}</b
-                    >
-                  </div>
-                  <div>
-                    <span
-                      >Desnivel acumulado<small
-                        >Media: {{ comparisonAverageLabel(comparison, 'elevation', 'm') }}</small
-                      ></span
-                    ><strong>{{ activity().elevation }} m</strong
-                    ><b
-                      class="comparison-delta"
-                      [class.above]="
-                        comparisonDelta(activity().elevation, comparison, 'elevation') > 0
-                      "
-                      [class.below]="
-                        comparisonDelta(activity().elevation, comparison, 'elevation') < 0
-                      "
-                      >{{ comparisonDeltaLabel(activity().elevation, comparison, 'elevation') }}</b
-                    >
-                  </div>
-                  <div>
-                    <span
-                      >Velocidad media<small
-                        >Media:
-                        {{ comparisonAverageLabel(comparison, 'average_speed', 'km/h') }}</small
-                      ></span
-                    ><strong>{{ activity().speed.toFixed(1) }} km/h</strong
-                    ><b
-                      class="comparison-delta"
-                      [class.above]="
-                        comparisonDelta(activity().speed, comparison, 'average_speed') > 0
-                      "
-                      [class.below]="
-                        comparisonDelta(activity().speed, comparison, 'average_speed') < 0
-                      "
-                      >{{ comparisonDeltaLabel(activity().speed, comparison, 'average_speed') }}</b
-                    >
-                  </div>
-                  <div>
-                    <span
-                      >Calorías<small
-                        >Media: {{ comparisonAverageLabel(comparison, 'calories', 'kcal') }}</small
-                      ></span
-                    ><strong>{{ formatNumber(calories()) }} kcal</strong
-                    ><b
-                      class="comparison-delta"
-                      [class.above]="comparisonDelta(calories(), comparison, 'calories') > 0"
-                      [class.below]="comparisonDelta(calories(), comparison, 'calories') < 0"
-                      >{{ comparisonDeltaLabel(calories(), comparison, 'calories') }}</b
-                    >
-                  </div>
-                  <div>
-                    <span
-                      >Frecuencia cardíaca<small
-                        >Media:
-                        {{ comparisonAverageLabel(comparison, 'average_heartrate', 'bpm') }}</small
-                      ></span
-                    ><strong>{{ formatNumber(averageHeartRate()) }} bpm</strong
-                    ><b
-                      class="comparison-delta"
-                      [class.above]="
-                        comparisonDelta(averageHeartRate(), comparison, 'average_heartrate') > 0
-                      "
-                      [class.below]="
-                        comparisonDelta(averageHeartRate(), comparison, 'average_heartrate') < 0
-                      "
-                      >{{
-                        comparisonDeltaLabel(averageHeartRate(), comparison, 'average_heartrate')
-                      }}</b
-                    >
-                  </div>
-                </div>
-              </article>
-            } @empty {
-              <div class="empty-state">No hay suficientes datos para comparar esta actividad.</div>
-            }
-          </div>
-          <div class="comparison-table" aria-label="Comparativa con tus medias">
-            <div class="comparison-table-row comparison-table-head">
-              <span>Métrica</span>
-              @for (comparison of comparisons(); track comparison.key) {
-                <span>{{ comparison.label }}</span>
-              }
+                }
+              </div>
             </div>
-            <div class="comparison-table-row">
-              <span>Distancia</span>
-              @for (comparison of comparisons(); track comparison.key) {
-                <span
-                  ><strong>{{ activity().distance.toFixed(1) }} km</strong
-                  ><small>Media {{ comparisonAverageLabel(comparison, 'distance', 'km') }}</small
-                  ><b
-                    [class.above]="comparisonDelta(activity().distance, comparison, 'distance') > 0"
-                    [class.below]="comparisonDelta(activity().distance, comparison, 'distance') < 0"
-                    >{{ comparisonDeltaLabel(activity().distance, comparison, 'distance') }}</b
-                  ></span
-                >
-              }
+            <div class="comparison-legend">
+              <span><i class="legend-dot neutral"></i> Media = promedio del periodo</span>
+              <span><i class="legend-dot positive"></i> Más que tu media</span>
+              <span><i class="legend-dot warning"></i> Menos que tu media</span>
             </div>
-            <div class="comparison-table-row">
-              <span>Tiempo</span>
-              @for (comparison of comparisons(); track comparison.key) {
-                <span
-                  ><strong>{{ formatDuration(activity().moving_time_seconds) }}</strong
-                  ><small>Media {{ comparisonAverageLabel(comparison, 'moving_time', '') }}</small
-                  ><b
-                    [class.above]="
-                      comparisonDelta(activity().moving_time_seconds, comparison, 'moving_time') > 0
-                    "
-                    [class.below]="
-                      comparisonDelta(activity().moving_time_seconds, comparison, 'moving_time') < 0
-                    "
-                    >{{
-                      comparisonDeltaLabel(
-                        activity().moving_time_seconds,
-                        comparison,
-                        'moving_time'
-                      )
-                    }}</b
-                  ></span
-                >
-              }
-            </div>
-            <div class="comparison-table-row">
-              <span>Desnivel</span>
-              @for (comparison of comparisons(); track comparison.key) {
-                <span
-                  ><strong>{{ activity().elevation }} m</strong
-                  ><small>Media {{ comparisonAverageLabel(comparison, 'elevation', 'm') }}</small
-                  ><b
-                    [class.above]="
-                      comparisonDelta(activity().elevation, comparison, 'elevation') > 0
-                    "
-                    [class.below]="
-                      comparisonDelta(activity().elevation, comparison, 'elevation') < 0
-                    "
-                    >{{ comparisonDeltaLabel(activity().elevation, comparison, 'elevation') }}</b
-                  ></span
-                >
-              }
-            </div>
-            <div class="comparison-table-row">
-              <span>Velocidad</span>
-              @for (comparison of comparisons(); track comparison.key) {
-                <span
-                  ><strong>{{ activity().speed.toFixed(1) }} km/h</strong
-                  ><small
-                    >Media {{ comparisonAverageLabel(comparison, 'average_speed', 'km/h') }}</small
-                  ><b
-                    [class.above]="
-                      comparisonDelta(activity().speed, comparison, 'average_speed') > 0
-                    "
-                    [class.below]="
-                      comparisonDelta(activity().speed, comparison, 'average_speed') < 0
-                    "
-                    >{{ comparisonDeltaLabel(activity().speed, comparison, 'average_speed') }}</b
-                  ></span
-                >
-              }
-            </div>
-            <div class="comparison-table-row">
-              <span>Calorías</span>
-              @for (comparison of comparisons(); track comparison.key) {
-                <span
-                  ><strong>{{ formatNumber(calories()) }} kcal</strong
-                  ><small>Media {{ comparisonAverageLabel(comparison, 'calories', 'kcal') }}</small
-                  ><b
-                    [class.above]="comparisonDelta(calories(), comparison, 'calories') > 0"
-                    [class.below]="comparisonDelta(calories(), comparison, 'calories') < 0"
-                    >{{ comparisonDeltaLabel(calories(), comparison, 'calories') }}</b
-                  ></span
-                >
-              }
-            </div>
-            <div class="comparison-table-row">
-              <span>Pulso medio</span>
-              @for (comparison of comparisons(); track comparison.key) {
-                <span
-                  ><strong>{{ formatNumber(averageHeartRate()) }} bpm</strong
-                  ><small
-                    >Media
-                    {{ comparisonAverageLabel(comparison, 'average_heartrate', 'bpm') }}</small
-                  ><b
-                    [class.above]="
-                      comparisonDelta(averageHeartRate(), comparison, 'average_heartrate') > 0
-                    "
-                    [class.below]="
-                      comparisonDelta(averageHeartRate(), comparison, 'average_heartrate') < 0
-                    "
-                    >{{
-                      comparisonDeltaLabel(averageHeartRate(), comparison, 'average_heartrate')
-                    }}</b
-                  ></span
-                >
-              }
-            </div>
-          </div>
+          } @else {
+            <div class="empty-state">No hay suficientes datos para comparar esta actividad.</div>
+          }
         </div>
         <div class="segment-preview">
           <div class="section-heading compact">
@@ -3724,6 +3531,14 @@ export class LiveActivityPage {
   readonly detail = signal<Record<string, any> | null>(null);
   readonly labels = signal<ActivityLabel[]>([]);
   readonly effortOptions = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  readonly comparisonRows = [
+    { key: 'distance', label: 'Distancia', context: 'Volumen de la salida', unit: 'km', icon: 'straighten' },
+    { key: 'moving_time', label: 'Tiempo en movimiento', context: 'Duración', unit: '', icon: 'schedule' },
+    { key: 'elevation', label: 'Desnivel acumulado', context: 'Carga de desnivel', unit: 'm', icon: 'terrain' },
+    { key: 'average_speed', label: 'Velocidad media', context: 'Ritmo de desplazamiento', unit: 'km/h', icon: 'speed' },
+    { key: 'calories', label: 'Calorías', context: 'Gasto estimado', unit: 'kcal', icon: 'local_fire_department' },
+    { key: 'average_heartrate', label: 'Pulso medio', context: 'Intensidad', unit: 'bpm', icon: 'favorite' },
+  ];
   readonly journal = {
     name: '',
     notes: '',
@@ -4119,11 +3934,62 @@ export class LiveActivityPage {
         ? value * 3.6
         : value;
   }
+  comparisonCurrentValue(key: string) {
+    const current = this.activity();
+    switch (key) {
+      case 'distance':
+        return current.distance;
+      case 'moving_time':
+        return current.moving_time_seconds ?? null;
+      case 'elevation':
+        return current.elevation;
+      case 'average_speed':
+        return current.speed;
+      case 'calories':
+        return this.calories();
+      case 'average_heartrate':
+        return this.averageHeartRate();
+      default:
+        return null;
+    }
+  }
+  comparisonCurrentLabel(key: string) {
+    const value = this.comparisonCurrentValue(key);
+    if (value === null || !Number.isFinite(value)) return '—';
+    if (key === 'moving_time') return this.formatDuration(value);
+    const decimals = key === 'distance' || key === 'average_speed' ? 1 : 0;
+    const unit = this.comparisonRows.find((row) => row.key === key)?.unit ?? '';
+    return `${value.toFixed(decimals)}${unit ? ` ${unit}` : ''}`;
+  }
   comparisonAverageLabel(comparison: any, key: string, unit: string) {
     const value = this.comparisonMetric(comparison, key);
     if (value === null) return '—';
     const decimals = key === 'distance' || key === 'average_speed' ? 1 : 0;
     return `${value.toFixed(decimals)}${unit ? ` ${unit}` : ''}`;
+  }
+  comparisonDeltaAbsoluteLabel(
+    current: number | null | undefined,
+    comparison: any,
+    key: string,
+    unit: string,
+  ) {
+    const average = this.comparisonMetric(comparison, key);
+    const value = Number(current);
+    if (average === null || !Number.isFinite(value)) return 'Sin datos';
+    const delta = value - average;
+    if (key === 'moving_time') return this.signedDuration(delta);
+    const decimals = key === 'distance' || key === 'average_speed' ? 1 : 0;
+    return `${delta > 0 ? '+' : ''}${delta.toFixed(decimals)}${unit ? ` ${unit}` : ''}`;
+  }
+  comparisonDeltaSummary(current: number | null | undefined, comparison: any, key: string) {
+    const delta = this.comparisonDelta(current, comparison, key);
+    if (!Number.isFinite(delta) || Math.abs(delta) < 0.5) return 'En línea con tu media';
+    return `${delta > 0 ? '+' : ''}${delta.toFixed(0)}% · ${delta > 0 ? 'Más' : 'Menos'}`;
+  }
+  private signedDuration(seconds: number) {
+    const sign = seconds > 0 ? '+' : seconds < 0 ? '−' : '';
+    const total = Math.round(Math.abs(seconds));
+    return `${sign}${Math.floor(total / 3600) ? `${Math.floor(total / 3600)} h ` : ''}${String(Math.floor(total / 60) % 60).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
   }
   comparisonDelta(current: number | null | undefined, comparison: any, key: string) {
     const average = this.comparisonMetric(comparison, key);
