@@ -68,3 +68,9 @@
 @media(max-width:800px){.mobile-header{height:calc(70px + env(safe-area-inset-top, 0px));padding:env(safe-area-inset-top, 0px) 20px 0}.page{padding-bottom:calc(98px + env(safe-area-inset-bottom, 0px))}.bottom-nav{height:calc(70px + env(safe-area-inset-bottom, 0px));padding:8px 8px env(safe-area-inset-bottom, 0px);-webkit-transform:translate3d(0, 0, 0);transform:translate3d(0, 0, 0)}}
 @supports (-webkit-touch-callout:none){@media(max-width:800px){.mobile-header{height:calc(70px + max(env(safe-area-inset-top, 0px), 20px));padding-top:max(env(safe-area-inset-top, 0px), 20px)}}}
 .segment-card-bottom{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:18px}
+.week-status-detail{display:block;margin-top:7px;color:#c4cfbb;font-size:11px;line-height:1.35}
+.dashboard-chart-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;color:#65705f;font-size:9px;letter-spacing:.04em}
+.dashboard-chart-footer>span{display:flex;align-items:center;gap:6px}
+.dashboard-chart-footer .chart-key{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dashboard-chart-footer .chart-key.lime{background:var(--lime)}
+@media(max-width:520px){.dashboard-chart{height:210px;margin-top:16px}.dashboard-chart-footer{align-items:flex-start;flex-direction:column;gap:5px}.dashboard-chart-footer>span:last-child{padding-left:14px}}

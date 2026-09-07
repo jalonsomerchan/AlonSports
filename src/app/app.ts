@@ -60,6 +60,30 @@ export interface DashboardChartPoint {
   elevation: number;
   speed: number;
 }
+
+export function countRestDays(load: Record<string, any> | null | undefined, today = new Date()) {
+  const rows = Array.isArray(load?.['days']) && load['days'].length
+    ? load['days'] as Array<Record<string, any>>
+    : (Array.isArray(load?.['series']) ? load['series'] : load?.['fitness_days']) as Array<Record<string, any>> | undefined;
+  const activeDays = new Set(
+    (rows ?? [])
+      .filter((row) => 'activities' in row ? Number(row['activities']) > 0 : Number(row['load'] ?? 0) > 0)
+      .map((row) => String(row['day'] ?? row['date'] ?? '').slice(0, 10))
+      .filter(Boolean),
+  );
+  const start = new Date(today);
+  start.setHours(0, 0, 0, 0);
+  let rest = 0;
+  for (let index = 0; index < 7; index += 1) {
+    const day = new Date(start);
+    day.setDate(start.getDate() - index);
+    const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    if (!activeDays.has(key)) rest += 1;
+  }
+  if (rows?.length) return rest;
+  const fallback = Number(load?.['rest_days']);
+  return Number.isFinite(fallback) ? Math.max(0, Math.min(7, fallback)) : 0;
+}
 export interface Segment {
   id: string;
   name: string;
@@ -1035,7 +1059,7 @@ export class AppShell {}
   template: `<div class="dashboard-chart">
     <canvas
       #canvas
-      aria-label="Evolución de kilómetros, altitud acumulada y velocidad media"
+      aria-label="Evolución de kilómetros diarios durante los últimos 30 días"
     ></canvas>
   </div>`,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -1044,6 +1068,7 @@ export class DashboardChart implements AfterViewInit, OnDestroy {
   @ViewChild('canvas', { static: true }) private canvas!: ElementRef<HTMLCanvasElement>;
   readonly points = input<DashboardChartPoint[]>([]);
   private chart?: import('chart.js').Chart;
+  private resizeObserver?: ResizeObserver;
   private readonly redraw = effect(() => {
     const points = this.points();
     if (this.chart) this.update(points);
@@ -1053,81 +1078,50 @@ export class DashboardChart implements AfterViewInit, OnDestroy {
     if (typeof window === 'undefined') return;
     import('chart.js').then(({ Chart, registerables }) => {
       Chart.register(...registerables);
-      this.chart = new Chart(this.canvas.nativeElement, {
-        type: 'line',
-        data: this.chartData(this.points()),
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            legend: {
-              position: 'top',
-              align: 'start',
-              labels: {
-                color: '#aab3a3',
-                boxWidth: 9,
-                boxHeight: 9,
-                padding: 16,
-                font: { size: 10, family: 'Inter, system-ui, sans-serif' },
+      const render = () => {
+        if (this.chart) return;
+        this.chart = new Chart(this.canvas.nativeElement, {
+          type: 'line',
+          data: this.chartData(this.points()),
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: '#182019',
+                borderColor: 'rgba(201,244,91,.25)',
+                borderWidth: 1,
+                titleColor: '#f0f2eb',
+                bodyColor: '#c7d0bd',
+                padding: 10,
+                callbacks: { label: (context: any) => ` ${Number(context.raw ?? 0).toFixed(1)} km` },
               },
             },
-            tooltip: {
-              backgroundColor: '#182019',
-              borderColor: 'rgba(201,244,91,.25)',
-              borderWidth: 1,
-              titleColor: '#f0f2eb',
-              bodyColor: '#c7d0bd',
-              padding: 10,
-              displayColors: true,
+            scales: {
+              x: {
+                ticks: { color: '#65705f', maxTicksLimit: 6, maxRotation: 0, font: { size: 9 } },
+                grid: { display: false },
+              },
+              y: {
+                beginAtZero: true,
+                title: { display: true, text: 'km', color: '#c9f45b', font: { size: 9, weight: 'bold' } },
+                ticks: { color: '#9dbb61', font: { size: 9 } },
+                grid: { color: 'rgba(255,255,255,.07)' },
+              },
             },
+            elements: { line: { tension: 0.35 }, point: { radius: 0, hoverRadius: 4 } },
           },
-          scales: {
-            x: {
-              ticks: { color: '#65705f', maxRotation: 0, autoSkip: true, font: { size: 9 } },
-              grid: { color: 'rgba(255,255,255,.05)' },
-            },
-            distance: {
-              position: 'left',
-              beginAtZero: true,
-              title: {
-                display: true,
-                text: 'km',
-                color: '#c9f45b',
-                font: { size: 9, weight: 'bold' },
-              },
-              ticks: { color: '#9dbb61', font: { size: 9 } },
-              grid: { color: 'rgba(255,255,255,.07)' },
-            },
-            elevation: {
-              position: 'right',
-              beginAtZero: true,
-              title: {
-                display: true,
-                text: 'altitud m',
-                color: '#f0a45d',
-                font: { size: 9, weight: 'bold' },
-              },
-              ticks: { color: '#c69463', font: { size: 9 } },
-              grid: { drawOnChartArea: false },
-            },
-            speed: {
-              position: 'right',
-              beginAtZero: true,
-              title: {
-                display: true,
-                text: 'km/h',
-                color: '#76a8ff',
-                font: { size: 9, weight: 'bold' },
-              },
-              ticks: { color: '#7fa9f2', font: { size: 9 } },
-              grid: { drawOnChartArea: false },
-              offset: true,
-            },
-          },
-          elements: { line: { tension: 0.35 }, point: { radius: 2, hoverRadius: 4 } },
-        },
-      });
+        });
+        const host = this.canvas.nativeElement.parentElement;
+        if (host && typeof ResizeObserver !== 'undefined') {
+          this.resizeObserver = new ResizeObserver(() => this.chart?.resize());
+          this.resizeObserver.observe(host);
+        }
+        requestAnimationFrame(() => this.chart?.resize());
+      };
+      requestAnimationFrame(() => requestAnimationFrame(render));
     });
   }
 
@@ -1136,28 +1130,13 @@ export class DashboardChart implements AfterViewInit, OnDestroy {
       labels: points.map((point) => point.label),
       datasets: [
         {
-          label: 'Kilómetros',
+          label: 'Kilómetros por día',
           data: points.map((point) => point.distance),
-          yAxisID: 'distance',
           borderColor: '#c9f45b',
-          backgroundColor: 'rgba(201,244,91,.12)',
+          backgroundColor: 'rgba(201,244,91,.16)',
+          borderWidth: 2.5,
+          pointBackgroundColor: '#c9f45b',
           fill: true,
-        },
-        {
-          label: 'Altitud acumulada',
-          data: points.map((point) => point.elevation),
-          yAxisID: 'elevation',
-          borderColor: '#f0a45d',
-          backgroundColor: 'transparent',
-          fill: false,
-        },
-        {
-          label: 'Velocidad media',
-          data: points.map((point) => point.speed),
-          yAxisID: 'speed',
-          borderColor: '#76a8ff',
-          backgroundColor: 'transparent',
-          fill: false,
         },
       ],
     };
@@ -1171,6 +1150,7 @@ export class DashboardChart implements AfterViewInit, OnDestroy {
   }
   ngOnDestroy() {
     this.redraw.destroy();
+    this.resizeObserver?.disconnect();
     this.chart?.destroy();
   }
 }
@@ -1534,17 +1514,20 @@ export class ActivityCard {
       </div>
       <div class="stats-grid">
         <article class="stat-card">
-          <span class="stat-label">DISTANCIA</span><strong>56.8 <small>km</small></strong>
+          <span class="stat-label">DISTANCIA</span>
+          <strong>56.8 <small>km</small></strong>
         </article>
         <article class="stat-card">
-          <span class="stat-label">TIEMPO EN MOVIMIENTO</span
-          ><strong>4h 12<small>min</small></strong>
+          <span class="stat-label">TIEMPO EN MOVIMIENTO</span>
+          <strong>4h 12<small>min</small></strong>
         </article>
         <article class="stat-card">
-          <span class="stat-label">DESNIVEL ACUMULADO</span><strong>842 <small>m</small></strong>
+          <span class="stat-label">DESNIVEL ACUMULADO</span>
+          <strong>842 <small>m</small></strong>
         </article>
         <article class="stat-card">
-          <span class="stat-label">VELOCIDAD MEDIA</span><strong>11.3 <small>km/h</small></strong>
+          <span class="stat-label">VELOCIDAD MEDIA</span>
+          <strong>11.3 <small>km/h</small></strong>
         </article>
       </div>
       <article class="chart-card">
@@ -2644,8 +2627,8 @@ export class SettingsPage {
       <div class="week-banner">
         <div>
           <p class="eyebrow lime">ESTADO DE ENTRENAMIENTO</p>
-          <strong>{{ loading() ? 'Calculando tu estado…' : statusTitle() }}</strong
-          ><span class="week-status-detail">{{ statusDetail() }}</span>
+          <strong>{{ loading() ? 'Calculando tu estado…' : statusTitle() }}</strong>
+          <span class="week-status-detail">{{ statusDetail() }}</span>
         </div>
         <div class="week-ring" [style.background]="ringBackground()">
           <span>{{ readiness() }}<small>%</small></span>
@@ -2653,20 +2636,20 @@ export class SettingsPage {
       </div>
       <div class="stats-grid">
         <article class="stat-card">
-          <span class="stat-label">DISTANCIA</span
-          ><strong>{{ distance() }} <small>km</small></strong>
+          <span class="stat-label">DISTANCIA</span>
+          <strong>{{ distance() }} <small>km</small></strong>
         </article>
         <article class="stat-card">
-          <span class="stat-label">TIEMPO EN MOVIMIENTO</span
-          ><strong>{{ movingTime() }} <small>min</small></strong>
+          <span class="stat-label">TIEMPO EN MOVIMIENTO</span>
+          <strong>{{ movingTime() }} <small>min</small></strong>
         </article>
         <article class="stat-card">
-          <span class="stat-label">DESNIVEL ACUMULADO</span
-          ><strong>{{ elevation() }} <small>m</small></strong>
+          <span class="stat-label">DESNIVEL ACUMULADO</span>
+          <strong>{{ elevation() }} <small>m</small></strong>
         </article>
         <article class="stat-card">
-          <span class="stat-label">VELOCIDAD MEDIA</span
-          ><strong>{{ averageSpeed() }} <small>km/h</small></strong>
+          <span class="stat-label">VELOCIDAD MEDIA</span>
+          <strong>{{ averageSpeed() }} <small>km/h</small></strong>
         </article>
       </div>
       <article class="chart-card">
@@ -2684,8 +2667,8 @@ export class SettingsPage {
           ><span> km sincronizados</span><span class="positive">{{ statusDetail() }}</span>
         </div>
         <app-dashboard-chart [points]="trendPoints()" />
-        <div class="chart-axis">
-          <span>kilómetros</span><span>altitud acumulada</span><span>velocidad media</span>
+        <div class="dashboard-chart-footer">
+          <span><i class="chart-key lime"></i>Distancia por día</span><span>{{ activeTrendDays() }} días activos · últimos 30 días</span>
         </div>
       </article>
       <section class="section-heading">
@@ -2742,6 +2725,7 @@ export class LiveDashboardPage {
       };
     });
   });
+  readonly activeTrendDays = computed(() => this.trendPoints().filter((point) => point.distance > 0).length);
   readonly distance = computed(() =>
     this.formatNumber(this.data.dashboard()?.stats?.distance ?? 0),
   );
@@ -2776,7 +2760,7 @@ export class LiveDashboardPage {
   statusDetail() {
     const load = this.trainingLoad();
     if (!load) return 'Carga estimada con tus actividades';
-    const rest = Number(load['rest_days'] ?? 0);
+    const rest = countRestDays(load);
     const ratio = Number(load['ratio']);
     return ratio > 1.5
       ? 'Carga reciente alta · prioriza recuperación'

@@ -2,10 +2,10 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { RouterLink } from '@angular/router';
-import { ApiService } from './app';
+import { ApiService, countRestDays } from './app';
 import { TrainingLoadChart } from './chart-components';
 
-interface LoadPoint { day: string; load: number; fitness: number; fatigue: number; form: number; freshness?: number; }
+interface LoadPoint { day?: string; label?: string; date?: string; load?: number; fitness?: number; fatigue?: number; form?: number; freshness?: number; }
 interface Goal { id?: number | string; period_type?: string; sport_type?: string | null; metric?: string; target?: number; period_start?: string; period_end?: string; }
 interface Workout { id: number | string; planned_date: string; name: string; sport_type?: string; workout_type?: string; duration_minutes?: number | null; distance_meters?: number | null; intensity?: string; notes?: string | null; }
 interface CalendarActivity { id: number | string; start_date_local?: string; distance?: number; moving_time?: number; total_elevation_gain?: number; sport_type?: string; }
@@ -71,14 +71,21 @@ export class ProgressPage {
   readonly savingGoal = signal(false); readonly savingWorkout = signal(false); readonly deletingWorkout = signal<number | string | null>(null);
   goalPeriod = 'month'; goalMetric = 'distance'; goalTargetValue = 100; goalSport = ''; workoutDate = this.dateKey(1); workoutName = ''; workoutDuration = 45; workoutIntensity = 'easy';
   private pending = 0;
-  readonly series = computed(() => ((this.load()?.['series'] ?? this.load()?.['fitness_days'] ?? []) as LoadPoint[]).slice(-42));
+  readonly series = computed(() => {
+    const source = (this.load()?.['series'] ?? this.load()?.['fitness_days'] ?? []) as LoadPoint[];
+    return source
+      .filter((point) => point && (point.day || point.date || point.label))
+      .slice()
+      .sort((a, b) => String(a.day ?? a.date ?? a.label).localeCompare(String(b.day ?? b.date ?? b.label)))
+      .slice(-42);
+  });
   readonly current = computed(() => (this.load()?.['current'] ?? this.series().at(-1) ?? null) as LoadPoint | null);
   readonly insights = computed(() => (this.analysis()?.['insights'] ?? []) as Array<{ tone: string; title: string; text: string }>);
   readonly method = computed(() => String(this.load()?.['method'] ?? 'Carga estimada con tus actividades'));
   readonly activeDays = computed(() => new Set(this.activities().map(item => this.dayKey(item.start_date_local))).size);
   readonly calendarDays = computed(() => Array.from({ length: 14 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() + index); const key = this.dateKeyFrom(date); return { key, label: date.toLocaleDateString('es-ES', { weekday: 'short' }).replace('.', ''), number: date.getDate(), today: index === 0, active: this.activities().some(item => this.dayKey(item.start_date_local) === key), planned: this.workouts().some(item => item.planned_date === key) }; }));
   readonly acuteScore = computed(() => Number(this.load()?.['acute_score'] ?? this.current()?.load ?? 0));
-  readonly restDays = computed(() => Number(this.load()?.['rest_days'] ?? 0));
+  readonly restDays = computed(() => countRestDays(this.load()));
 
   constructor() { this.reload(); }
   reload() { this.loading.set(true); this.error.set(''); this.pending = 5; const done = () => { this.pending -= 1; if (this.pending <= 0) this.loading.set(false); };

@@ -2,10 +2,12 @@ import { AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, OnDestro
 
 export interface TrainingLoadChartPoint {
   label?: string;
+  day?: string;
   date?: string;
   load?: number;
   fitness?: number;
   fatigue?: number;
+  form?: number;
 }
 
 export interface MonthlyDistanceChartPoint { month?: string; distance?: number; }
@@ -188,11 +190,23 @@ export class TrainingLoadChart implements AfterViewInit, OnDestroy {
   private readonly redraw = effect(() => { const series = this.series(); if (this.chart) this.update(series); });
 
   ngAfterViewInit() { registerChart().then(Chart => { this.chartConstructor = Chart; this.chart = new Chart(this.canvas.nativeElement, this.config(this.series())); }); }
-  private config(series: TrainingLoadChartPoint[]): any { const labels = series.map((point, index) => point.label ?? point.date ?? String(index + 1)); return { type: 'line', data: { labels, datasets: [
-    { label: 'Carga diaria', data: series.map(point => point.load ?? 0), borderColor: chartColors.lime, backgroundColor: 'rgba(201,244,91,.1)', fill: true, borderWidth: 2 },
-    { label: 'Fitness', data: series.map(point => point.fitness ?? 0), borderColor: chartColors.blue, backgroundColor: 'transparent', fill: false, borderWidth: 2 },
-    { label: 'Fatiga', data: series.map(point => point.fatigue ?? 0), borderColor: chartColors.orange, backgroundColor: 'transparent', fill: false, borderWidth: 2 },
-  ] }, options: lineOptions({ x: { ticks: { color: chartColors.muted, maxRotation: 0, autoSkip: true, font: { size: 9 } }, grid: { color: chartColors.grid } }, y: { beginAtZero: true, ticks: { color: chartColors.muted, font: { size: 9 } }, grid: { color: chartColors.grid } } }) }; }
+  private config(series: TrainingLoadChartPoint[]): any {
+    const labels = series.map((point, index) => {
+      const raw = String(point.label ?? point.day ?? point.date ?? '');
+      const match = raw.match(/^(?:\d{4}-)?(\d{2})[-/](\d{2})/);
+      return match ? `${match[2]}/${match[1]}` : raw || String(index + 1);
+    });
+    const value = (input: unknown) => Number.isFinite(Number(input)) ? Number(input) : 0;
+    return { type: 'line', data: { labels, datasets: [
+      { label: 'Carga diaria', data: series.map(point => value(point.load)), yAxisID: 'load', borderColor: chartColors.lime, backgroundColor: 'rgba(201,244,91,.1)', fill: true, borderWidth: 2 },
+      { label: 'Fitness', data: series.map(point => value(point.fitness ?? point.form)), yAxisID: 'score', borderColor: chartColors.blue, backgroundColor: 'transparent', fill: false, borderWidth: 2 },
+      { label: 'Fatiga', data: series.map(point => value(point.fatigue)), yAxisID: 'score', borderColor: chartColors.orange, backgroundColor: 'transparent', fill: false, borderWidth: 2 },
+    ] }, options: lineOptions({
+      x: { ticks: { color: chartColors.muted, maxRotation: 0, autoSkip: true, font: { size: 9 } }, grid: { color: chartColors.grid } },
+      load: { position: 'left', beginAtZero: true, title: { display: true, text: 'carga', color: chartColors.lime, font: { size: 9 } }, ticks: { color: chartColors.muted, font: { size: 9 } }, grid: { color: chartColors.grid } },
+      score: { position: 'right', beginAtZero: true, title: { display: true, text: 'fitness / fatiga', color: chartColors.blue, font: { size: 9 } }, ticks: { color: chartColors.muted, font: { size: 9 } }, grid: { drawOnChartArea: false } },
+    }) };
+  }
   private update(series: TrainingLoadChartPoint[]) { if (!this.chart) return; const data = this.config(series).data; this.chart.data.labels = data.labels; this.chart.data.datasets = data.datasets as any; this.chart.update('none'); }
   ngOnDestroy() { this.redraw.destroy(); this.chart?.destroy(); }
 }
