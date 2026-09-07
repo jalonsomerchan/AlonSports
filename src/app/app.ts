@@ -1656,6 +1656,7 @@ export class RouteMap implements AfterViewInit, OnDestroy {
   });
   private map?: maplibregl.Map;
   private maplibre?: typeof import('maplibre-gl');
+  private styleReady = false;
   private routeMarkers: maplibregl.Marker[] = [];
   private readonly routeSourceId = 'activity-route';
   private readonly checkpointsSourceId = 'activity-checkpoints';
@@ -1678,14 +1679,15 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     });
     this.map.addControl(new maplibre.NavigationControl({ showCompass: true }), 'top-right');
     this.map.addControl(new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
-    this.map.once('load', () => {
+    this.map.once('style.load', () => {
+      this.styleReady = true;
       this.drawRoute(this.routePoints());
       window.setTimeout(() => this.map?.resize(), 0);
     });
   }
 
   private drawRoute(points: [number, number][]) {
-    if (!this.map || !this.maplibre || points.length < 2 || !this.map.isStyleLoaded()) return;
+    if (!this.map || !this.maplibre || !this.styleReady || points.length < 2) return;
     const maplibre = this.maplibre;
     const coords = toMapLibreCoordinates(points);
     const routeData = this.routeFeature(coords);
@@ -1730,6 +1732,7 @@ export class RouteMap implements AfterViewInit, OnDestroy {
 
   ngOnDestroy() {
     this.redraw.destroy();
+    this.styleReady = false;
     this.routeMarkers.forEach(marker => marker.remove());
     this.map?.remove();
   }

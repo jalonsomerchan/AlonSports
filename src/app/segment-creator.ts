@@ -75,6 +75,7 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   readonly selectionWidth = computed(() => Math.max(0, this.endRatio() - this.startRatio()));
   private map?: maplibregl.Map;
   private maplibre?: typeof import('maplibre-gl');
+  private styleReady = false;
   private routeMarkers: maplibregl.Marker[] = [];
   private playbackTimer?: number;
   private readonly redraw = effect(() => { const points = this.points(); if (this.map && points.length > 1) this.drawRoute(points); });
@@ -94,7 +95,8 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
     this.map.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
     this.map.addControl(new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
     this.map.on('click', event => this.selectNearest([event.lngLat.lat, event.lngLat.lng]));
-    this.map.once('load', () => {
+    this.map.once('style.load', () => {
+      this.styleReady = true;
       this.drawRoute(this.points());
       window.setTimeout(() => this.map?.resize(), 0);
     });
@@ -115,7 +117,7 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   }
 
   private drawRoute(points: [number, number][]) {
-    if (!this.map || !this.map.isStyleLoaded() || points.length < 2) return;
+    if (!this.map || !this.styleReady || points.length < 2) return;
     const coords = toMapLibreCoordinates(points);
     const start = clamp(this.startIndex(), 0, coords.length - 1); const end = clamp(this.endIndex(), start + 1, coords.length - 1);
     this.setLineSource('segment-full-route', coords);
@@ -165,7 +167,7 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
     this.playbackTimer = window.setInterval(() => { const next = this.playIndex() + 1; if (next >= this.endIndex()) { this.playIndex.set(this.endIndex()); this.stopPlayback(); } else this.playIndex.set(next); }, 180);
   }
   private stopPlayback() { this.playing.set(false); if (this.playbackTimer) window.clearInterval(this.playbackTimer); this.playbackTimer = undefined; }
-  ngOnDestroy() { this.stopPlayback(); this.redraw.destroy(); this.routeMarkers.forEach(marker => marker.remove()); this.map?.remove(); }
+  ngOnDestroy() { this.stopPlayback(); this.redraw.destroy(); this.styleReady = false; this.routeMarkers.forEach(marker => marker.remove()); this.map?.remove(); }
 }
 
 @Component({
