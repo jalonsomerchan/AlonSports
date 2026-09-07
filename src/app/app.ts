@@ -1605,6 +1605,8 @@ export class ActivitiesPage {
   readonly activities = ACTIVITIES;
 }
 
+type RouteMapLayer = 'standard' | 'topographic' | 'contrast';
+
 @Component({
   selector: 'app-route-map',
   template: `<div class="route-map maplibre-shell" [class.activity-route-map]="activityName()">
@@ -1612,6 +1614,7 @@ export class ActivitiesPage {
     <svg #routeOverlay class="map-route-overlay" aria-hidden="true" focusable="false">
       <polyline class="map-route-overlay-shadow"></polyline>
       <polyline class="map-route-overlay-line"></polyline>
+      <g #routeDecorations class="map-route-decorations"></g>
     </svg>
     <div class="map-topbar">
       <div class="map-context">
@@ -1623,22 +1626,52 @@ export class ActivitiesPage {
       </div>
       <span class="map-location">{{ location() || 'Madrid' }}</span>
     </div>
+    <div class="map-tools">
+      <button type="button" class="map-tool-button" [class.active]="showLayerMenu()" (click)="toggleLayerMenu()" aria-haspopup="true" [attr.aria-expanded]="showLayerMenu()">Capas</button>
+      <button type="button" class="map-tool-button" [class.active]="showInfoMenu()" (click)="toggleInfoMenu()" aria-haspopup="true" [attr.aria-expanded]="showInfoMenu()">Información</button>
+      @if (showLayerMenu()) {
+        <div class="map-tool-menu map-layer-menu" role="menu" aria-label="Capas del mapa">
+          <span class="map-menu-title">CAPA BASE</span>
+          <button type="button" role="menuitemradio" [class.selected]="activeLayer() === 'standard'" [attr.aria-checked]="activeLayer() === 'standard'" (click)="setMapLayer('standard')">Mapa</button>
+          <button type="button" role="menuitemradio" [class.selected]="activeLayer() === 'topographic'" [attr.aria-checked]="activeLayer() === 'topographic'" (click)="setMapLayer('topographic')">Topográfico</button>
+          <button type="button" role="menuitemradio" [class.selected]="activeLayer() === 'contrast'" [attr.aria-checked]="activeLayer() === 'contrast'" (click)="setMapLayer('contrast')">Contraste</button>
+        </div>
+      }
+      @if (showInfoMenu()) {
+        <div class="map-tool-menu map-info-menu" aria-label="Información visible en el mapa">
+          <span class="map-menu-title">DATOS VISIBLES</span>
+          <label><input type="checkbox" [checked]="showKilometers()" (change)="showKilometers.set($any($event.target).checked)" /> Kilómetros</label>
+          <label><input type="checkbox" [checked]="showAverageSpeed()" (change)="showAverageSpeed.set($any($event.target).checked)" /> Velocidad media</label>
+          <label><input type="checkbox" [checked]="showMaxSpeed()" (change)="showMaxSpeed.set($any($event.target).checked)" /> Velocidad máxima</label>
+          <label><input type="checkbox" [checked]="showCadence()" (change)="showCadence.set($any($event.target).checked)" /> Cadencia</label>
+          <label><input type="checkbox" [checked]="showDuration()" (change)="showDuration.set($any($event.target).checked)" /> Tiempo en movimiento</label>
+          <label><input type="checkbox" [checked]="showElevation()" (change)="showElevation.set($any($event.target).checked)" /> Desnivel</label>
+          <span class="map-menu-title map-menu-title-spaced">RECORRIDO</span>
+          <label><input type="checkbox" [checked]="colorBySpeed()" (change)="colorBySpeed.set($any($event.target).checked)" /> Colorear por velocidad</label>
+          <small class="map-menu-hint">Las flechas muestran el sentido de marcha en los tramos de ida y vuelta.</small>
+        </div>
+      }
+    </div>
     <div class="map-legend">
       <span><i class="start-dot"></i> Inicio</span><span><i class="end-dot"></i> Final</span>
+      @if (colorBySpeed()) { <span><i class="speed-dot"></i> Velocidad</span> }
       <span><i class="checkpoint-dot"></i> Hitos</span>
     </div>
   </div>
   <div class="map-stats">
-    <span><strong>{{ distanceLabel() }}</strong><small>DISTANCIA</small></span>
-    <span><strong>{{ duration() || '—' }}</strong><small>EN MOVIMIENTO</small></span>
-    <span><strong>{{ pace() || '—' }}</strong><small>RITMO MEDIO</small></span>
-    <span><strong>{{ elevationLabel() }}</strong><small>DESNIVEL</small></span>
+    @if (showKilometers()) { <span><strong>{{ distanceLabel() }}</strong><small>DISTANCIA</small></span> }
+    @if (showDuration()) { <span><strong>{{ duration() || '—' }}</strong><small>EN MOVIMIENTO</small></span> }
+    @if (showAverageSpeed()) { <span><strong>{{ averageSpeedLabel() }}</strong><small>VELOCIDAD MEDIA</small></span> }
+    @if (showMaxSpeed()) { <span><strong>{{ maxSpeedLabel() }}</strong><small>VELOCIDAD MÁXIMA</small></span> }
+    @if (showCadence()) { <span><strong>{{ cadenceLabel() }}</strong><small>CADENCIA MEDIA</small></span> }
+    @if (showElevation()) { <span><strong>{{ elevationLabel() }}</strong><small>DESNIVEL</small></span> }
   </div>`,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RouteMap implements AfterViewInit, OnDestroy {
   @ViewChild('map', { static: true }) private mapElement!: ElementRef<HTMLDivElement>;
   @ViewChild('routeOverlay', { static: true }) private routeOverlayElement!: ElementRef<SVGSVGElement>;
+  @ViewChild('routeDecorations', { static: true }) private routeDecorationsElement!: ElementRef<SVGGElement>;
   readonly routePoints = input<[number, number][]>(DEFAULT_ROUTE);
   readonly activityName = input('');
   readonly sportLabel = input('');
@@ -1646,7 +1679,39 @@ export class RouteMap implements AfterViewInit, OnDestroy {
   readonly distance = input<number | null>(null);
   readonly duration = input('');
   readonly pace = input('');
+  readonly averageSpeed = input<number | null>(null);
+  readonly maxSpeed = input<number | null | undefined>(null);
   readonly elevation = input<number | null>(null);
+  readonly streams = input<Record<string, any> | null | undefined>();
+  readonly activeLayer = signal<RouteMapLayer>('standard');
+  readonly showLayerMenu = signal(false);
+  readonly showInfoMenu = signal(false);
+  readonly showKilometers = signal(true);
+  readonly showAverageSpeed = signal(true);
+  readonly showMaxSpeed = signal(true);
+  readonly showCadence = signal(false);
+  readonly showDuration = signal(true);
+  readonly showElevation = signal(true);
+  readonly colorBySpeed = signal(true);
+  readonly speedValues = computed(() => this.values('velocity_smooth').map((value) => value * 3.6));
+  readonly maxSpeedLabel = computed(() => {
+    const values = this.speedValues().filter((value) => value >= 0);
+    const streamValue = values.length ? Math.max(...values) : null;
+    const value = this.maxSpeed() ?? streamValue;
+    return value === null ? '—' : `${value.toFixed(1)} km/h`;
+  });
+  readonly averageSpeedLabel = computed(() => {
+    const inputValue = this.averageSpeed();
+    if (inputValue !== null && inputValue !== undefined && Number.isFinite(inputValue)) return `${inputValue.toFixed(1)} km/h`;
+    const values = this.speedValues().filter((value) => value > 0);
+    const value = values.length ? values.reduce((total, item) => total + item, 0) / values.length : null;
+    return value === null ? (this.pace() || '—') : `${value.toFixed(1)} km/h`;
+  });
+  readonly cadenceLabel = computed(() => {
+    const values = this.values('cadence').filter((value) => value > 0);
+    const value = values.length ? values.reduce((total, item) => total + item, 0) / values.length : null;
+    return value === null ? '—' : `${Math.round(value)} rpm`;
+  });
   readonly routeDistance = computed(() => this.routePoints().reduce((total, point, index, points) => {
     if (!index) return total;
     return total + distanceBetween(points[index - 1], point);
@@ -1663,11 +1728,19 @@ export class RouteMap implements AfterViewInit, OnDestroy {
   private maplibre?: typeof import('maplibre-gl');
   private styleReady = false;
   private routeMarkers: maplibregl.Marker[] = [];
+  private lastRouteKey = '';
   private readonly routeSourceId = 'activity-route';
   private readonly checkpointsSourceId = 'activity-checkpoints';
   private readonly redraw = effect(() => {
     const points = this.routePoints();
-    if (this.styleReady && points.length > 1) this.drawRoute(points);
+    this.streams();
+    this.colorBySpeed();
+    this.showKilometers();
+    const routeKey = points.length ? `${points.length}:${points[0]?.join(',')}:${points.at(-1)?.join(',')}` : '';
+    if (this.styleReady && points.length > 1) {
+      this.drawRoute(points, routeKey !== this.lastRouteKey);
+      this.lastRouteKey = routeKey;
+    }
   });
 
   async ngAfterViewInit() {
@@ -1686,7 +1759,8 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     this.map.addControl(new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
     const renderRoute = () => {
       this.styleReady = true;
-      this.drawRoute(this.routePoints());
+      this.applyMapLayer(this.activeLayer());
+      this.drawRoute(this.routePoints(), true);
       window.setTimeout(() => this.map?.resize(), 0);
     };
     this.map.once('style.load', renderRoute);
@@ -1699,7 +1773,7 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     this.map.on('pitch', refreshOverlay);
   }
 
-  private drawRoute(points: [number, number][]) {
+  private drawRoute(points: [number, number][], fitToRoute = false) {
     if (!this.map || !this.maplibre || !this.styleReady || points.length < 2) return;
     const maplibre = this.maplibre;
     const coords = toMapLibreCoordinates(points);
@@ -1724,11 +1798,13 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     ];
     const bounds = new maplibre.LngLatBounds(coords[0], coords[0]);
     coords.slice(1).forEach(point => bounds.extend(point));
-    this.map.fitBounds(bounds, {
-      padding: { top: 98, bottom: 54, left: 48, right: 48 },
-      maxZoom: 14,
-      duration: 0,
-    });
+    if (fitToRoute) {
+      this.map.fitBounds(bounds, {
+        padding: { top: 98, bottom: 54, left: 48, right: 48 },
+        maxZoom: 14,
+        duration: 0,
+      });
+    }
     this.updateRouteOverlay(coords);
   }
 
@@ -1737,17 +1813,109 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     const svg = this.routeOverlayElement.nativeElement;
     const shadow = svg.querySelector<SVGPolylineElement>('.map-route-overlay-shadow');
     const line = svg.querySelector<SVGPolylineElement>('.map-route-overlay-line');
-    if (!shadow || !line) return;
+    const decorations = this.routeDecorationsElement?.nativeElement;
+    if (!shadow || !line || !decorations) return;
     const width = this.mapElement.nativeElement.clientWidth;
     const height = this.mapElement.nativeElement.clientHeight;
     if (width <= 0 || height <= 0 || points.length < 2) return;
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    const screenPoints = points.map(([longitude, latitude]) => {
+    const projected = points.map(([longitude, latitude]) => {
       const point = this.map!.project({ lng: longitude, lat: latitude });
-      return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
-    }).join(' ');
+      return { x: point.x, y: point.y };
+    });
+    const screenPoints = projected.map(({ x, y }) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
     shadow.setAttribute('points', screenPoints);
     line.setAttribute('points', screenPoints);
+    const speeds = this.speedValues();
+    const speedColorsActive = this.colorBySpeed() && speeds.length > 1;
+    line.style.opacity = speedColorsActive ? '0' : '1';
+    const decorationParts: string[] = [];
+    if (speedColorsActive) {
+      for (let index = 0; index < projected.length - 1; index += 1) {
+        const start = projected[index];
+        const end = projected[index + 1];
+        const speed = (speeds[index] ?? speeds[index - 1] ?? 0);
+        decorationParts.push(`<line class="route-speed-segment" x1="${start.x.toFixed(1)}" y1="${start.y.toFixed(1)}" x2="${end.x.toFixed(1)}" y2="${end.y.toFixed(1)}" stroke="${this.speedColor(speed)}" />`);
+      }
+    }
+    const arrowStep = Math.max(18, Math.floor(projected.length / 16));
+    for (let index = Math.floor(arrowStep / 2); index < projected.length - 1; index += arrowStep) {
+      const start = projected[Math.max(0, index - 2)];
+      const end = projected[Math.min(projected.length - 1, index + 2)];
+      const current = projected[index];
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const length = Math.max(Math.hypot(dx, dy), 1);
+      const ux = dx / length;
+      const uy = dy / length;
+      const nx = -uy;
+      const ny = ux;
+      const tip = { x: current.x + ux * 7, y: current.y + uy * 7 };
+      const base = { x: current.x - ux * 6, y: current.y - uy * 6 };
+      decorationParts.push(`<polygon class="route-direction-arrow" points="${tip.x.toFixed(1)},${tip.y.toFixed(1)} ${(base.x + nx * 4).toFixed(1)},${(base.y + ny * 4).toFixed(1)} ${(base.x - nx * 4).toFixed(1)},${(base.y - ny * 4).toFixed(1)}" />`);
+    }
+    if (this.showKilometers()) {
+      const distances = this.distanceValues(points);
+      let nextKilometre = 1;
+      distances.forEach((distance, index) => {
+        if (distance < nextKilometre * 1000 || index === 0 || index >= projected.length) return;
+        const point = projected[index];
+        decorationParts.push(`<g class="route-kilometre-marker"><circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="10" /><text x="${point.x.toFixed(1)}" y="${(point.y + 3).toFixed(1)}">${nextKilometre}</text></g>`);
+        nextKilometre += 1;
+      });
+    }
+    decorations.innerHTML = decorationParts.join('');
+  }
+
+  toggleLayerMenu() {
+    this.showLayerMenu.update((value) => !value);
+    this.showInfoMenu.set(false);
+  }
+
+  toggleInfoMenu() {
+    this.showInfoMenu.update((value) => !value);
+    this.showLayerMenu.set(false);
+  }
+
+  setMapLayer(layer: RouteMapLayer) {
+    this.activeLayer.set(layer);
+    this.showLayerMenu.set(false);
+    this.applyMapLayer(layer);
+  }
+
+  private applyMapLayer(layer: RouteMapLayer) {
+    if (!this.map || !this.styleReady) return;
+    if (this.map.getLayer('osm-raster')) this.map.setLayoutProperty('osm-raster', 'visibility', layer === 'topographic' ? 'none' : 'visible');
+    if (this.map.getLayer('topographic-raster')) this.map.setLayoutProperty('topographic-raster', 'visibility', layer === 'topographic' ? 'visible' : 'none');
+    if (this.map.getLayer('osm-raster')) {
+      this.map.setPaintProperty('osm-raster', 'raster-saturation', layer === 'contrast' ? -0.85 : -0.45);
+      this.map.setPaintProperty('osm-raster', 'raster-brightness-min', layer === 'contrast' ? 0.2 : 0.32);
+      this.map.setPaintProperty('osm-raster', 'raster-brightness-max', layer === 'contrast' ? 0.78 : 0.9);
+      this.map.setPaintProperty('osm-raster', 'raster-contrast', layer === 'contrast' ? 0.22 : 0.05);
+    }
+  }
+
+  private values(name: string) {
+    const values = this.streams()?.[name]?.data;
+    return Array.isArray(values)
+      ? values.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+      : [];
+  }
+
+  private distanceValues(points: [number, number][]) {
+    const stream = this.values('distance');
+    if (stream.length >= points.length) return points.map((_, index) => stream[index]);
+    let total = 0;
+    return points.map((point, index) => {
+      if (index) total += distanceBetween([points[index - 1][1], points[index - 1][0]], [point[1], point[0]]);
+      return total;
+    });
+  }
+
+  private speedColor(value: number) {
+    const max = Math.max(25, ...this.speedValues());
+    const ratio = Math.max(0, Math.min(1, value / max));
+    return `hsl(${Math.round(12 + ratio * 112)} 88% 59%)`;
   }
 
   private routeFeature(coords: [number, number][]) {
@@ -3354,7 +3522,10 @@ export class LiveSegmentsPage {
           [distance]="activity().distance"
           [duration]="formatDuration(activity().moving_time_seconds)"
           [pace]="activity().pace"
+          [averageSpeed]="activity().speed"
+          [maxSpeed]="activity().max_speed"
           [elevation]="activity().elevation"
+          [streams]="detail()?.['streams']"
         />
         <div class="detail-grid summary-data">
           <article class="detail-card">
@@ -3477,7 +3648,10 @@ export class LiveSegmentsPage {
           [distance]="activity().distance"
           [duration]="formatDuration(activity().moving_time_seconds)"
           [pace]="activity().pace"
+          [averageSpeed]="activity().speed"
+          [maxSpeed]="activity().max_speed"
           [elevation]="activity().elevation"
+          [streams]="detail()?.['streams']"
         />
         <div class="insight-card">
           <span class="insight-icon"><mat-icon>show_chart</mat-icon></span>
