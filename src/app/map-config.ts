@@ -1,4 +1,4 @@
-export const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+export const MAP_STYLE = '/map-style.json';
 
 export type RoutePoint = [number, number];
 
