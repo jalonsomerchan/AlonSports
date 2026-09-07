@@ -1662,7 +1662,7 @@ export class RouteMap implements AfterViewInit, OnDestroy {
   private readonly checkpointsSourceId = 'activity-checkpoints';
   private readonly redraw = effect(() => {
     const points = this.routePoints();
-    if (this.map?.isStyleLoaded() && points.length) this.drawRoute(points);
+    if (this.styleReady && points.length > 1) this.drawRoute(points);
   });
 
   async ngAfterViewInit() {
@@ -1679,17 +1679,21 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     });
     this.map.addControl(new maplibre.NavigationControl({ showCompass: true }), 'top-right');
     this.map.addControl(new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
-    this.map.once('style.load', () => {
+    const renderRoute = () => {
       this.styleReady = true;
       this.drawRoute(this.routePoints());
       window.setTimeout(() => this.map?.resize(), 0);
-    });
+    };
+    this.map.once('style.load', renderRoute);
+    this.map.once('load', renderRoute);
+    this.map.once('idle', renderRoute);
   }
 
   private drawRoute(points: [number, number][]) {
     if (!this.map || !this.maplibre || !this.styleReady || points.length < 2) return;
     const maplibre = this.maplibre;
     const coords = toMapLibreCoordinates(points);
+    if (coords.length < 2) return;
     const routeData = this.routeFeature(coords);
     const checkpoints = [0.25, 0.5, 0.75].map((progress, index) => {
       const point = coords[Math.min(coords.length - 1, Math.max(1, Math.round((coords.length - 1) * progress)))];

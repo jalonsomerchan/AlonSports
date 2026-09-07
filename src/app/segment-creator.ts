@@ -78,7 +78,7 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   private styleReady = false;
   private routeMarkers: maplibregl.Marker[] = [];
   private playbackTimer?: number;
-  private readonly redraw = effect(() => { const points = this.points(); if (this.map && points.length > 1) this.drawRoute(points); });
+  private readonly redraw = effect(() => { const points = this.points(); if (this.styleReady && points.length > 1) this.drawRoute(points); });
 
   async ngAfterViewInit() {
     if (typeof window === 'undefined') return;
@@ -95,11 +95,14 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
     this.map.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
     this.map.addControl(new maplibre.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
     this.map.on('click', event => this.selectNearest([event.lngLat.lat, event.lngLat.lng]));
-    this.map.once('style.load', () => {
+    const renderRoute = () => {
       this.styleReady = true;
       this.drawRoute(this.points());
       window.setTimeout(() => this.map?.resize(), 0);
-    });
+    };
+    this.map.once('style.load', renderRoute);
+    this.map.once('load', renderRoute);
+    this.map.once('idle', renderRoute);
   }
 
   onStartInput(event: Event) { this.setStart(Number((event.target as HTMLInputElement).value)); }
@@ -119,6 +122,7 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   private drawRoute(points: [number, number][]) {
     if (!this.map || !this.styleReady || points.length < 2) return;
     const coords = toMapLibreCoordinates(points);
+    if (coords.length < 2) return;
     const start = clamp(this.startIndex(), 0, coords.length - 1); const end = clamp(this.endIndex(), start + 1, coords.length - 1);
     this.setLineSource('segment-full-route', coords);
     this.setLineSource('segment-selected-route', coords.slice(start, end + 1));

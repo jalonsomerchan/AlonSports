@@ -3,7 +3,16 @@ export const MAP_STYLE = '/map-style.json';
 export type RoutePoint = [number, number];
 
 export function toMapLibreCoordinates(points: RoutePoint[]) {
-  return points.map(([latitude, longitude]) => [longitude, latitude] as [number, number]);
+  return points.flatMap((point) => {
+    const latitude = Number(point?.[0]);
+    const longitude = Number(point?.[1]);
+    return Number.isFinite(latitude)
+      && Number.isFinite(longitude)
+      && Math.abs(latitude) <= 90
+      && Math.abs(longitude) <= 180
+      ? [[longitude, latitude] as [number, number]]
+      : [];
+  });
 }
 
 export function distanceBetween(from: RoutePoint, to: RoutePoint) {
