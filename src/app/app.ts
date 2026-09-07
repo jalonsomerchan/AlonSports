@@ -587,6 +587,7 @@ export class AuthStore {
   private init$?: Observable<boolean>;
   private readonly api = inject(ApiService);
   private readonly csrf = inject(CsrfStore);
+  private readonly pwaLoginMarker = 'alon-sports-pwa-authenticated';
   initialize(force = false) {
     if (force) this.init$ = undefined;
     if (!this.init$)
@@ -610,6 +611,8 @@ export class AuthStore {
     this.user.set(session.user);
     this.preferences.set(session.preferences ?? {});
     this.status.set(session.authenticated ? 'authenticated' : 'anonymous');
+    if (session.authenticated && typeof window !== 'undefined')
+      window.localStorage.setItem(this.pwaLoginMarker, '1');
   }
   setError(message: string) {
     this.error.set(message);
@@ -625,10 +628,27 @@ export class AuthStore {
       error: () => this.error.set('No se ha podido iniciar la conexión con Strava.'),
     });
   }
+  shouldRecoverPwaSession() {
+    if (typeof window === 'undefined') return false;
+    const standalone = window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+    return standalone && window.localStorage.getItem(this.pwaLoginMarker) === '1';
+  }
+  bridgePwaSession() {
+    if (typeof window === 'undefined') return;
+    const returnTo = new URL(window.location.href);
+    returnTo.searchParams.set('auth', 'bridge');
+    returnTo.searchParams.set('bridge', '1');
+    window.location.assign(`${API_BASE_URL}/auth/bridge?return_to=${encodeURIComponent(returnTo.toString())}`);
+  }
+  clearPwaLoginMarker() {
+    if (typeof window !== 'undefined') window.localStorage.removeItem(this.pwaLoginMarker);
+  }
   logout() {
     this.init$ = undefined;
     this.user.set(null);
     this.status.set('anonymous');
+    this.clearPwaLoginMarker();
     this.api
       .mutation<{ ok: boolean }>('post', '/auth/logout')
       .pipe(catchError(() => of({ ok: false })))
@@ -911,6 +931,7 @@ export class LoginPage {
   readonly error = this.auth.error;
   constructor() {
     const result = this.route.snapshot.queryParamMap.get('auth');
+    const bridge = this.route.snapshot.queryParamMap.get('bridge') === '1';
     if (result === 'error') {
       this.auth.setError(
         this.route.snapshot.queryParamMap.get('message') ??
@@ -920,11 +941,18 @@ export class LoginPage {
     } else if (result === 'success') {
       this.auth.refreshSession().subscribe((authenticated) => {
         if (authenticated) this.router.navigateByUrl('/app/dashboard', { replaceUrl: true });
+        else if (!bridge && this.auth.shouldRecoverPwaSession()) this.auth.bridgePwaSession();
         else {
+          if (bridge) this.auth.clearPwaLoginMarker();
           this.auth.setError('Strava se conectó, pero no se ha podido recuperar la sesión.');
           this.router.navigateByUrl('/login', { replaceUrl: true });
         }
       });
+    } else if (result === 'bridge-anonymous') {
+      this.auth.clearPwaLoginMarker();
+      this.router.navigateByUrl('/login', { replaceUrl: true });
+    } else if (!bridge && this.auth.shouldRecoverPwaSession()) {
+      this.auth.bridgePwaSession();
     }
   }
   submit() {
@@ -1504,20 +1532,16 @@ export class ActivityCard {
       <div class="stats-grid">
         <article class="stat-card">
           <span class="stat-label">DISTANCIA</span><strong>56.8 <small>km</small></strong
-          ><span class="stat-change positive"><mat-icon>trending_up</mat-icon> 12.4%</span>
         </article>
         <article class="stat-card">
           <span class="stat-label">TIEMPO EN MOVIMIENTO</span
-          ><strong>4h 12<small>min</small></strong
-          ><span class="stat-change positive"><mat-icon>trending_up</mat-icon> 8.1%</span>
+          ><strong>4h 12<small>min</small></strong>
         </article>
         <article class="stat-card">
-          <span class="stat-label">DESNIVEL ACUMULADO</span><strong>842 <small>m</small></strong
-          ><span class="stat-change neutral">+ 124 m</span>
+          <span class="stat-label">DESNIVEL ACUMULADO</span><strong>842 <small>m</small></strong>
         </article>
         <article class="stat-card">
-          <span class="stat-label">VELOCIDAD MEDIA</span><strong>11.3 <small>km/h</small></strong
-          ><span class="stat-change positive">Ritmo semanal</span>
+          <span class="stat-label">VELOCIDAD MEDIA</span><strong>11.3 <small>km/h</small></strong>
         </article>
       </div>
       <article class="chart-card">
@@ -2627,23 +2651,19 @@ export class SettingsPage {
       <div class="stats-grid">
         <article class="stat-card">
           <span class="stat-label">DISTANCIA</span
-          ><strong>{{ distance() }} <small>km</small></strong
-          ><span class="stat-change positive"><mat-icon>trending_up</mat-icon> Datos API</span>
+          ><strong>{{ distance() }} <small>km</small></strong>
         </article>
         <article class="stat-card">
           <span class="stat-label">TIEMPO EN MOVIMIENTO</span
-          ><strong>{{ movingTime() }} <small>min</small></strong
-          ><span class="stat-change positive"><mat-icon>trending_up</mat-icon> Datos API</span>
+          ><strong>{{ movingTime() }} <small>min</small></strong>
         </article>
         <article class="stat-card">
           <span class="stat-label">DESNIVEL ACUMULADO</span
-          ><strong>{{ elevation() }} <small>m</small></strong
-          ><span class="stat-change neutral">Acumulado</span>
+          ><strong>{{ elevation() }} <small>m</small></strong>
         </article>
         <article class="stat-card">
           <span class="stat-label">VELOCIDAD MEDIA</span
-          ><strong>{{ averageSpeed() }} <small>km/h</small></strong
-          ><span class="stat-change positive">Calculada del volumen</span>
+          ><strong>{{ averageSpeed() }} <small>km/h</small></strong>
         </article>
       </div>
       <article class="chart-card">
@@ -2950,7 +2970,6 @@ export class LiveSegmentsPage {
             }
           </div>
         }
-        <p class="muted">Detalle real de tu salida.</p>
       </div>
       <div class="activity-metrics">
         <div>
@@ -3003,31 +3022,25 @@ export class LiveSegmentsPage {
           <article class="detail-card">
             <span>TIEMPO TOTAL</span
             ><strong>{{ formatDuration(activity().elapsed_time_seconds) }}</strong>
-            <p>Incluye las pausas</p>
           </article>
           <article class="detail-card">
             <span>VELOCIDAD MEDIA</span
             ><strong>{{ activity().speed.toFixed(1) }} <small>km/h</small></strong>
-            <p>Calculada en movimiento</p>
           </article>
           <article class="detail-card">
             <span>DESNIVEL ACUMULADO</span
             ><strong>{{ activity().elevation }} <small>m</small></strong>
-            <p>Ganancia positiva</p>
           </article>
           <article class="detail-card">
             <span>CALORÍAS</span><strong>{{ formatNumber(calories()) }} <small>kcal</small></strong>
-            <p>Estimación de la actividad</p>
           </article>
           <article class="detail-card">
             <span>FRECUENCIA CARDÍACA MEDIA</span
             ><strong>{{ formatNumber(averageHeartRate()) }} <small>bpm</small></strong>
-            <p>Máxima: {{ formatNumber(maxHeartRate()) }} bpm</p>
           </article>
           <article class="detail-card">
             <span>CADENCIA MEDIA</span
             ><strong>{{ formatNumber(cadence()) }} <small>spm</small></strong>
-            <p>Pasos por minuto</p>
           </article>
         </div>
         <div class="comparison-section">

@@ -21,8 +21,9 @@
 .dashboard-chart{height:270px;margin-top:20px;position:relative}
 .dashboard-chart canvas{display:block;width:100%!important;height:100%!important}
 .activity-metrics{grid-template-columns:repeat(5,1fr)}
+.dashboard-page .stat-card{min-height:100px;padding:16px}
 .summary-data{margin-top:18px}
-.summary-data .detail-card{min-height:145px}
+.summary-data .detail-card{min-height:104px;padding:16px}
 .leaflet-control-attribution{display:none!important}
 .activity-date{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .date-tag{display:inline-flex;align-items:center;padding:4px 8px;border:1px solid transparent;border-radius:999px;background:rgba(201,244,91,.18);color:var(--lime);font-size:9px;font-weight:800;letter-spacing:.04em;line-height:1;text-transform:uppercase;white-space:nowrap}
