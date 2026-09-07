@@ -1717,7 +1717,14 @@ export class RouteMap implements AfterViewInit, OnDestroy {
   }
 
   private routeFeature(coords: [number, number][]) {
-    return { type: 'Feature' as const, geometry: { type: 'LineString' as const, coordinates: coords }, properties: {} };
+    return {
+      type: 'FeatureCollection' as const,
+      features: [{
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: coords },
+        properties: {},
+      }],
+    };
   }
 
   private setGeoJsonSource(id: string, data: unknown) {

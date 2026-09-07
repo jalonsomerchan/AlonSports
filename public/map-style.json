@@ -12,6 +12,20 @@
       "tileSize": 256,
       "attribution": "© OpenStreetMap contributors",
       "maxzoom": 19
+    },
+    "activity-route": {
+      "type": "geojson",
+      "data": {
+        "type": "FeatureCollection",
+        "features": []
+      }
+    },
+    "activity-checkpoints": {
+      "type": "geojson",
+      "data": {
+        "type": "FeatureCollection",
+        "features": []
+      }
     }
   },
   "layers": [
@@ -32,6 +46,46 @@
         "raster-brightness-max": 0.9,
         "raster-contrast": 0.05,
         "raster-opacity": 0.92
+      }
+    },
+    {
+      "id": "activity-route-shadow",
+      "type": "line",
+      "source": "activity-route",
+      "paint": {
+        "line-color": "#081008",
+        "line-width": 10,
+        "line-opacity": 0.82,
+        "line-blur": 1.2
+      },
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      }
+    },
+    {
+      "id": "activity-route-line",
+      "type": "line",
+      "source": "activity-route",
+      "paint": {
+        "line-color": "#c9f45b",
+        "line-width": 5,
+        "line-opacity": 1
+      },
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      }
+    },
+    {
+      "id": "activity-checkpoints",
+      "type": "circle",
+      "source": "activity-checkpoints",
+      "paint": {
+        "circle-radius": 5,
+        "circle-color": "#ffffff",
+        "circle-stroke-color": "#16200b",
+        "circle-stroke-width": 2
       }
     }
   ]
