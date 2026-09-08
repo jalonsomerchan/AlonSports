@@ -1161,12 +1161,21 @@ export class DashboardChart implements AfterViewInit, OnDestroy {
 @Component({
   selector: 'app-activity-charts',
   imports: [MatIconModule],
-  template: `<div class="activity-chart-grid">
+  template: `<section class="activity-chart-summary" aria-label="Resumen detallado de los streams">
+    @for (metric of summaryMetrics(); track metric.label) {
+      <article class="activity-chart-stat">
+        <span>{{ metric.label }}</span>
+        <strong>{{ metric.value }} <small>{{ metric.unit }}</small></strong>
+        <em>{{ metric.detail }}</em>
+      </article>
+    }
+  </section>
+  <div class="activity-chart-grid">
     <article class="chart-card activity-data-chart">
       <div class="card-heading">
         <div>
           <span class="eyebrow">RITMO Y VELOCIDAD</span>
-          <h2>Cómo has corrido</h2>
+          <h2>Cómo te has movido</h2>
         </div>
         <mat-icon>speed</mat-icon>
       </div>
@@ -1174,6 +1183,48 @@ export class DashboardChart implements AfterViewInit, OnDestroy {
         <canvas #paceCanvas aria-label="Ritmo y velocidad de la actividad"></canvas>
       </div>
       <div class="chart-axis"><span>Inicio</span><span>Distancia</span><span>Final</span></div>
+    </article>
+    <article class="chart-card activity-data-chart">
+      <div class="card-heading">
+        <div>
+          <span class="eyebrow">VELOCIDAD Y PENDIENTE</span>
+          <h2>Cómo afecta el terreno</h2>
+        </div>
+        <mat-icon>trending_down</mat-icon>
+      </div>
+      <div class="activity-chart-canvas">
+        <canvas #gradeCanvas aria-label="Comparación de velocidad y pendiente"></canvas>
+      </div>
+      <div class="chart-axis"><span>Inicio</span><span>Distancia</span><span>Final</span></div>
+      <p class="chart-empty" [class.visible]="!hasGrade()">No hay datos de pendiente.</p>
+    </article>
+    <article class="chart-card activity-data-chart">
+      <div class="card-heading">
+        <div>
+          <span class="eyebrow">PULSO Y VELOCIDAD</span>
+          <h2>Respuesta al esfuerzo</h2>
+        </div>
+        <mat-icon>monitor_heart</mat-icon>
+      </div>
+      <div class="activity-chart-canvas">
+        <canvas #heartSpeedCanvas aria-label="Comparación de pulso y velocidad"></canvas>
+      </div>
+      <div class="chart-axis"><span>Inicio</span><span>Distancia</span><span>Final</span></div>
+      <p class="chart-empty" [class.visible]="!hasHeartRate()">No hay datos de frecuencia cardíaca.</p>
+    </article>
+    <article class="chart-card activity-data-chart">
+      <div class="card-heading">
+        <div>
+          <span class="eyebrow">CADENCIA Y VELOCIDAD</span>
+          <h2>Cadencia en movimiento</h2>
+        </div>
+        <mat-icon>directions_run</mat-icon>
+      </div>
+      <div class="activity-chart-canvas">
+        <canvas #cadenceCanvas aria-label="Comparación de cadencia y velocidad"></canvas>
+      </div>
+      <div class="chart-axis"><span>Inicio</span><span>Distancia</span><span>Final</span></div>
+      <p class="chart-empty" [class.visible]="!hasCadence()">No hay datos de cadencia.</p>
     </article>
     <article class="chart-card activity-data-chart">
       <div class="card-heading">
@@ -1187,6 +1238,7 @@ export class DashboardChart implements AfterViewInit, OnDestroy {
         <canvas #elevationCanvas aria-label="Perfil de altitud de la actividad"></canvas>
       </div>
       <div class="chart-axis"><span>Inicio</span><span>Distancia</span><span>Final</span></div>
+      <p class="chart-empty" [class.visible]="!hasElevation()">No hay datos de altitud.</p>
     </article>
     <article class="chart-card activity-data-chart">
       <div class="card-heading">
@@ -1200,6 +1252,7 @@ export class DashboardChart implements AfterViewInit, OnDestroy {
         <canvas #heartCanvas aria-label="Frecuencia cardíaca de la actividad"></canvas>
       </div>
       <div class="chart-axis"><span>Inicio</span><span>Media</span><span>Final</span></div>
+      <p class="chart-empty" [class.visible]="!hasHeartRate()">No hay datos de frecuencia cardíaca.</p>
     </article>
     <article class="chart-card activity-data-chart">
       <div class="card-heading">
@@ -1221,12 +1274,34 @@ export class DashboardChart implements AfterViewInit, OnDestroy {
 })
 export class ActivityCharts implements AfterViewInit, OnDestroy {
   @ViewChild('paceCanvas', { static: true }) private paceCanvas!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('gradeCanvas', { static: true }) private gradeCanvas!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('heartSpeedCanvas', { static: true }) private heartSpeedCanvas!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('cadenceCanvas', { static: true }) private cadenceCanvas!: ElementRef<HTMLCanvasElement>;
   @ViewChild('elevationCanvas', { static: true })
   private elevationCanvas!: ElementRef<HTMLCanvasElement>;
   @ViewChild('heartCanvas', { static: true }) private heartCanvas!: ElementRef<HTMLCanvasElement>;
   @ViewChild('zoneCanvas', { static: true }) private zoneCanvas!: ElementRef<HTMLCanvasElement>;
   readonly streams = input<Record<string, any> | null | undefined>();
   readonly hasHeartRate = computed(() => this.values('heartrate').length > 0);
+  readonly hasElevation = computed(() => this.values('altitude').length > 0);
+  readonly hasGrade = computed(() => this.values('grade_smooth').length > 0);
+  readonly hasCadence = computed(() => this.values('cadence').length > 0);
+  readonly summaryMetrics = computed(() => {
+    const speed = this.values('velocity_smooth');
+    const heart = this.values('heartrate');
+    const cadence = this.values('cadence');
+    const altitude = this.values('altitude');
+    const grade = this.values('grade_smooth');
+    const bestPace = speed.filter((value) => value > 0).reduce((best, value) => Math.min(best, 60 / (value * 3.6)), Number.POSITIVE_INFINITY);
+    return [
+      { label: 'Velocidad media', value: this.decimal(this.average(speed) * 3.6), unit: 'km/h', detail: `Máx. ${this.decimal(this.maximum(speed) * 3.6)} km/h` },
+      { label: 'Ritmo más rápido', value: this.pace(bestPace), unit: '/km', detail: 'Mejor punto del stream' },
+      { label: 'Pulso medio', value: this.decimal(this.average(heart), 0), unit: 'bpm', detail: `Máx. ${this.decimal(this.maximum(heart), 0)} bpm` },
+      { label: 'Cadencia media', value: this.decimal(this.average(cadence), 0), unit: 'spm', detail: `${cadence.length || 'Sin'} puntos disponibles` },
+      { label: 'Rango de altitud', value: altitude.length ? `${this.decimal(this.minimum(altitude), 0)}–${this.decimal(this.maximum(altitude), 0)}` : '—', unit: 'm', detail: altitude.length ? `Rango ${this.decimal(this.maximum(altitude) - this.minimum(altitude), 0)} m` : 'Sin stream de altitud' },
+      { label: 'Muestreo', value: String(Math.max(speed.length, heart.length, cadence.length, altitude.length, grade.length)), unit: 'puntos', detail: `${this.availableStreams()} variables disponibles` },
+    ];
+  });
   private readonly charts: import('chart.js').Chart[] = [];
   private chartType: any;
   private chartReady = false;
@@ -1278,6 +1353,95 @@ export class ActivityCharts implements AfterViewInit, OnDestroy {
         options: this.lineOptions({
           speed: { position: 'left', title: 'km/h', color: '#76a8ff' },
           pace: { position: 'right', title: 'min/km', color: '#c9f45b', reverse: true },
+        }),
+      }),
+    );
+    const grade = this.values('grade_smooth');
+    this.charts.push(
+      new (this.chartConstructor())(this.gradeCanvas.nativeElement, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Velocidad km/h',
+              data: speed,
+              borderColor: '#76a8ff',
+              backgroundColor: 'rgba(118,168,255,.1)',
+              fill: true,
+              yAxisID: 'speed',
+            },
+            {
+              label: 'Pendiente %',
+              data: grade,
+              borderColor: '#f0a45d',
+              backgroundColor: 'transparent',
+              yAxisID: 'grade',
+            },
+          ],
+        },
+        options: this.lineOptions({
+          speed: { position: 'left', title: 'km/h', color: '#76a8ff' },
+          grade: { position: 'right', title: '% pendiente', color: '#f0a45d' },
+        }),
+      }),
+    );
+    this.charts.push(
+      new (this.chartConstructor())(this.heartSpeedCanvas.nativeElement, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Pulso bpm',
+              data: heartRate,
+              borderColor: '#ff7184',
+              backgroundColor: 'rgba(255,113,132,.1)',
+              fill: true,
+              yAxisID: 'heart',
+            },
+            {
+              label: 'Velocidad km/h',
+              data: speed,
+              borderColor: '#76a8ff',
+              backgroundColor: 'transparent',
+              yAxisID: 'speed',
+            },
+          ],
+        },
+        options: this.lineOptions({
+          heart: { position: 'left', title: 'bpm', color: '#ff7184' },
+          speed: { position: 'right', title: 'km/h', color: '#76a8ff' },
+        }),
+      }),
+    );
+    const cadence = this.values('cadence');
+    this.charts.push(
+      new (this.chartConstructor())(this.cadenceCanvas.nativeElement, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Cadencia spm',
+              data: cadence,
+              borderColor: '#c9f45b',
+              backgroundColor: 'rgba(201,244,91,.1)',
+              fill: true,
+              yAxisID: 'cadence',
+            },
+            {
+              label: 'Velocidad km/h',
+              data: speed,
+              borderColor: '#76a8ff',
+              backgroundColor: 'transparent',
+              yAxisID: 'speed',
+            },
+          ],
+        },
+        options: this.lineOptions({
+          cadence: { position: 'left', title: 'spm', color: '#c9f45b' },
+          speed: { position: 'right', title: 'km/h', color: '#76a8ff' },
         }),
       }),
     );
@@ -1356,6 +1520,29 @@ export class ActivityCharts implements AfterViewInit, OnDestroy {
 
   private chartConstructor(): any {
     return this.chartType;
+  }
+  private average(values: number[]) {
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : Number.NaN;
+  }
+  private maximum(values: number[]) {
+    return values.length ? Math.max(...values) : Number.NaN;
+  }
+  private minimum(values: number[]) {
+    return values.length ? Math.min(...values) : Number.NaN;
+  }
+  private decimal(value: number, digits = 1) {
+    return Number.isFinite(value) ? value.toFixed(digits) : '—';
+  }
+  private pace(minutesPerKm: number) {
+    if (!Number.isFinite(minutesPerKm) || minutesPerKm <= 0) return '—';
+    const minutes = Math.floor(minutesPerKm);
+    const seconds = Math.round((minutesPerKm - minutes) * 60);
+    const normalizedMinutes = seconds === 60 ? minutes + 1 : minutes;
+    return `${normalizedMinutes}:${String(seconds === 60 ? 0 : seconds).padStart(2, '0')}`;
+  }
+  private availableStreams() {
+    return ['distance', 'velocity_smooth', 'altitude', 'heartrate', 'cadence', 'grade_smooth']
+      .filter((name) => this.values(name).length > 0).length;
   }
   private labels() {
     const distance = this.values('distance');
@@ -2467,9 +2654,149 @@ export class SegmentEditorPage {
   }
 }
 
+type ShareMapStyle = 'night' | 'paper' | 'terrain';
+
+@Component({
+  selector: 'app-share-map-preview',
+  template: `
+    <div #map class="share-map-preview-host" aria-label="Mapa real del recorrido"></div>
+    <span class="share-map-attribution">© OpenStreetMap</span>
+  `,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class ShareMapPreview implements AfterViewInit, OnDestroy {
+  @ViewChild('map', { static: true }) private mapElement!: ElementRef<HTMLDivElement>;
+  readonly routePoints = input<[number, number][]>([]);
+  readonly mapStyle = input<ShareMapStyle>('night');
+  readonly hideStart = input(true);
+  private map?: maplibregl.Map;
+  private maplibre?: typeof import('maplibre-gl');
+  private styleReady = false;
+  private resizeObserver?: ResizeObserver;
+  private readonly redraw = effect(() => {
+    const points = this.routePoints();
+    const style = this.mapStyle();
+    this.hideStart();
+    if (!this.map || !this.styleReady || points.length < 2) return;
+    this.applyStyle(style);
+    this.drawRoute(points, true);
+  });
+
+  async ngAfterViewInit() {
+    if (typeof window === 'undefined') return;
+    const maplibre = await import('maplibre-gl');
+    this.maplibre = maplibre;
+    const initial = toMapLibreCoordinates(this.routePoints());
+    this.map = new maplibre.Map({
+      container: this.mapElement.nativeElement,
+      style: MAP_STYLE,
+      center: initial[0] ?? [-3.7038, 40.4168],
+      zoom: 13,
+      attributionControl: false,
+      interactive: false,
+    });
+    const render = () => {
+      this.styleReady = true;
+      this.applyStyle(this.mapStyle());
+      this.drawRoute(this.routePoints(), true);
+      window.setTimeout(() => this.map?.resize(), 0);
+    };
+    this.map.once('style.load', render);
+    this.map.once('load', render);
+    this.map.once('idle', render);
+    this.resizeObserver = new ResizeObserver(() => this.map?.resize());
+    this.resizeObserver.observe(this.mapElement.nativeElement);
+  }
+
+  private drawRoute(points: [number, number][], fitToRoute: boolean) {
+    if (!this.map || !this.maplibre || !this.styleReady) return;
+    const coords = toMapLibreCoordinates(points);
+    if (coords.length < 2) return;
+    const source = this.map.getSource('share-route') as maplibregl.GeoJSONSource | undefined;
+    const data = {
+      type: 'FeatureCollection' as const,
+      features: [{
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: coords },
+        properties: {},
+      }],
+    };
+    if (source) source.setData(data);
+    else this.map.addSource('share-route', { type: 'geojson', data });
+    const pointsData = {
+      type: 'FeatureCollection' as const,
+      features: [
+        ...(!this.hideStart() ? [{ type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: coords[0] }, properties: { kind: 'start' } }] : []),
+        { type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: coords.at(-1)! }, properties: { kind: 'finish' } },
+      ],
+    };
+    const pointsSource = this.map.getSource('share-route-points') as maplibregl.GeoJSONSource | undefined;
+    if (pointsSource) pointsSource.setData(pointsData);
+    else this.map.addSource('share-route-points', { type: 'geojson', data: pointsData });
+    if (!this.map.getLayer('share-route-shadow')) {
+      this.map.addLayer({
+        id: 'share-route-shadow',
+        type: 'line',
+        source: 'share-route',
+        paint: { 'line-color': '#071007', 'line-width': 9, 'line-opacity': .72, 'line-blur': 1 },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
+      this.map.addLayer({
+        id: 'share-route-line',
+        type: 'line',
+        source: 'share-route',
+        paint: { 'line-color': '#c9f45b', 'line-width': 4, 'line-opacity': 1 },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
+      this.map.addLayer({
+        id: 'share-route-points',
+        type: 'circle',
+        source: 'share-route-points',
+        paint: {
+          'circle-radius': ['match', ['get', 'kind'], 'finish', 6, 22],
+          'circle-color': ['match', ['get', 'kind'], 'finish', '#c9f45b', '#182019'],
+          'circle-stroke-color': ['match', ['get', 'kind'], 'finish', '#182019', '#c9f45b'],
+          'circle-stroke-width': 2,
+          'circle-opacity': .92,
+        },
+      });
+    }
+    if (fitToRoute) {
+      const bounds = new this.maplibre.LngLatBounds(coords[0], coords[0]);
+      coords.slice(1).forEach((point) => bounds.extend(point));
+      this.map.fitBounds(bounds, { padding: 34, maxZoom: 15, duration: 0 });
+    }
+  }
+
+  private applyStyle(style: ShareMapStyle) {
+    if (!this.map || !this.styleReady) return;
+    if (this.map.getLayer('osm-raster')) {
+      this.map.setLayoutProperty('osm-raster', 'visibility', style === 'terrain' ? 'none' : 'visible');
+      this.map.setPaintProperty('osm-raster', 'raster-saturation', style === 'night' ? -0.85 : -0.18);
+      this.map.setPaintProperty('osm-raster', 'raster-brightness-min', style === 'night' ? 0.18 : 0.35);
+      this.map.setPaintProperty('osm-raster', 'raster-brightness-max', style === 'night' ? 0.7 : 1);
+      this.map.setPaintProperty('osm-raster', 'raster-contrast', style === 'night' ? 0.18 : 0.02);
+    }
+    if (this.map.getLayer('topographic-raster')) {
+      this.map.setLayoutProperty('topographic-raster', 'visibility', style === 'terrain' ? 'visible' : 'none');
+    }
+  }
+
+  captureCanvas() {
+    return this.styleReady ? this.map?.getCanvas() ?? null : null;
+  }
+
+  ngOnDestroy() {
+    this.redraw.destroy();
+    this.resizeObserver?.disconnect();
+    this.styleReady = false;
+    this.map?.remove();
+  }
+}
+
 @Component({
   selector: 'app-share',
-  imports: [FormsModule, RouterLink, MatIconModule],
+  imports: [FormsModule, RouterLink, MatIconModule, ShareMapPreview],
   template: `<section class="page share-studio-page">
     <div class="back-row">
       <a [routerLink]="['/app/activity', id, 'overview']"
@@ -2574,18 +2901,7 @@ export class SegmentEditorPage {
           <div class="share-preview-header"><div><p class="eyebrow">VISTA PREVIA</p><h2>Así se verá tu tarjeta</h2></div><span class="live-dot">EN DIRECTO</span></div>
           <div [class]="'share-card-preview ' + previewClasses()" [style.--preview-align]="textPosition" [style.--preview-justify]="textPosition === 'left' ? 'flex-start' : textPosition === 'right' ? 'flex-end' : 'center'">
             <div [class]="'share-card-map map-bg-' + mapStyle()">
-              <svg [attr.viewBox]="'0 0 ' + previewDimensions().width + ' ' + previewDimensions().height" preserveAspectRatio="none" aria-label="Previsualización de la ruta">
-                <g [attr.transform]="'scale(1 ' + previewDimensions().height / 480 + ')'">
-                  <path class="preview-road road-one" d="M-30 120 C 50 80, 84 165, 145 140 S 265 65, 395 100" />
-                  <path class="preview-road road-two" d="M-40 350 C 58 305, 98 380, 175 322 S 300 245, 400 280" />
-                  <path class="preview-road road-three" d="M32 510 C 92 414, 82 322, 138 244 S 250 112, 330 -24" />
-                  <path class="preview-road road-four" d="M-20 228 C 78 204, 156 238, 230 215 S 335 184, 390 202" />
-                </g>
-                <path class="preview-route" [attr.d]="previewRoutePath()" />
-                @if (hideStart) { <circle class="preview-hide-zone" [attr.cx]="previewRouteStart()[0]" [attr.cy]="previewRouteStart()[1]" r="34" /> }
-                <circle class="preview-start" [attr.cx]="previewRouteStart()[0]" [attr.cy]="previewRouteStart()[1]" r="7" />
-                <circle class="preview-finish" [attr.cx]="previewRouteFinish()[0]" [attr.cy]="previewRouteFinish()[1]" r="8" />
-              </svg>
+              <app-share-map-preview [routePoints]="routePoints()" [mapStyle]="mapStyle()" [hideStart]="hideStart" />
             </div>
             <div class="share-card-overlay"></div>
             <div class="share-card-content">
@@ -2598,6 +2914,15 @@ export class SegmentEditorPage {
                   @if (fields.time) { <span><strong>{{ durationLabel() }}</strong><small>TIEMPO</small></span> }
                   @if (fields.pace) { <span><strong>{{ activity().pace }}</strong><small>{{ activity().sport_type === 'Ride' ? 'VELOCIDAD' : 'RITMO' }}</small></span> }
                   @if (fields.elevation) { <span><strong>{{ activity().elevation }}</strong><small>DESNIVEL M</small></span> }
+                </div>
+              }
+              @if (fields.slope && elevationProfile().length > 1) {
+                <div class="share-card-slope">
+                  <div class="share-card-slope-heading"><span>PERFIL DE PENDIENTE</span><strong>+{{ profileGain() }} m</strong></div>
+                  <svg viewBox="0 0 320 62" preserveAspectRatio="none" aria-label="Gráfica de la pendiente">
+                    <path class="share-slope-area" [attr.d]="elevationProfileArea()" />
+                    <path class="share-slope-line" [attr.d]="elevationProfilePath()" />
+                  </svg>
                 </div>
               }
               @if (fields.footer) { <div class="share-card-footer"><span>Recorrido GPS</span><span>ALON SPORTS · {{ activity().sport_type.toUpperCase() }}</span></div> }
@@ -2676,19 +3001,40 @@ export class SharePage {
     { id: 'time', label: 'Tiempo', description: 'Tiempo en movimiento' },
     { id: 'pace', label: 'Ritmo / velocidad', description: 'Tu promedio' },
     { id: 'elevation', label: 'Desnivel', description: 'Metros positivos' },
+    { id: 'slope', label: 'Perfil de pendiente', description: 'Gráfica de altitud' },
     { id: 'footer', label: 'Pie de tarjeta', description: 'Detalles adicionales' },
   ] as const;
-  fields: { brand: boolean; title: boolean; date: boolean; stats: boolean; distance: boolean; time: boolean; pace: boolean; elevation: boolean; footer: boolean } = { brand: true, title: true, date: true, stats: true, distance: true, time: true, pace: true, elevation: false, footer: true };
+  fields: { brand: boolean; title: boolean; date: boolean; stats: boolean; distance: boolean; time: boolean; pace: boolean; elevation: boolean; slope: boolean; footer: boolean } = { brand: true, title: true, date: true, stats: true, distance: true, time: true, pace: true, elevation: false, slope: true, footer: true };
   readonly mapPosition = signal<'background' | 'top' | 'bottom'>('background');
   textPosition: 'left' | 'center' | 'right' = 'left';
   hideStart = true;
   readonly shareUrl = computed(() => this.share()?.url ?? '');
+  @ViewChild(ShareMapPreview) private shareMap?: ShareMapPreview;
   readonly activity = computed(() => this.detail() ? this.data.toActivity(this.detail()?.['activity'] ?? this.detail()) : (this.data.activities().find((item) => item.id === this.id) ?? ACTIVITIES[0]));
   readonly routePoints = computed<[number, number][]>(() => {
     const map = this.detail()?.['map'] as NormalizedMap | undefined;
     const stream = this.detail()?.['streams']?.['latlng'];
     const raw = map?.points?.length ? map.points : stream?.data;
     return Array.isArray(raw) && raw.length > 1 ? raw as [number, number][] : DEFAULT_ROUTE;
+  });
+  readonly elevationProfile = computed<[number, number][]>(() => {
+    const raw = this.detail()?.['streams']?.['altitude']?.data;
+    const values = Array.isArray(raw) ? raw.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : [];
+    if (values.length < 2) return [];
+    const step = Math.max(1, Math.ceil(values.length / 80));
+    const samples = values.filter((_, index) => index % step === 0 || index === values.length - 1);
+    const min = Math.min(...samples);
+    const max = Math.max(...samples);
+    const range = Math.max(max - min, 1);
+    return samples.map((value, index) => [
+      samples.length > 1 ? index / (samples.length - 1) * 320 : 0,
+      56 - ((value - min) / range) * 46,
+    ]);
+  });
+  readonly elevationGain = computed(() => {
+    const raw = this.detail()?.['streams']?.['altitude']?.data;
+    const values = Array.isArray(raw) ? raw.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : [];
+    return Math.round(values.slice(1).reduce((gain, value, index) => gain + Math.max(0, value - values[index]), 0));
   });
   readonly sportLabel = computed(() => this.activity().sport_type === 'Ride' ? 'Ciclismo' : this.activity().sport_type === 'Walk' ? 'Caminar' : 'Correr');
   readonly selectedPreset = computed(() => this.presets.find((preset) => preset.id === this.presetId()) ?? this.presets[0]);
@@ -2710,6 +3056,13 @@ export class SharePage {
     return this.fieldOptions.every((field) => this.fields[field.id]);
   }
   readonly previewRoutePath = computed(() => this.previewRouteGeometry().map(([x, y], index) => `${index ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' '));
+  readonly elevationProfilePath = computed(() => this.elevationProfile().map(([x, y], index) => `${index ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' '));
+  readonly elevationProfileArea = computed(() => {
+    const profile = this.elevationProfile();
+    if (profile.length < 2) return '';
+    return `M ${profile[0][0].toFixed(1)} 62 ${profile.map(([x, y]) => `L ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')} L ${profile.at(-1)![0].toFixed(1)} 62 Z`;
+  });
+  readonly profileGain = computed(() => this.elevationGain() || Math.round(this.activity().elevation || 0));
   constructor() {
     this.data.loadActivities();
     this.api.activity(this.id).subscribe({ next: (value) => this.detail.set(value), error: () => this.loading.set(false), complete: () => this.loading.set(false) });
@@ -2775,6 +3128,37 @@ export class SharePage {
     const mapHeight = this.mapPosition() === 'background' ? height : height * .65;
     ctx.save();
     ctx.beginPath(); ctx.rect(0, mapTop, width, mapHeight); ctx.clip();
+    const mapCanvas = this.shareMap?.captureCanvas();
+    if (mapCanvas) {
+      try {
+        ctx.drawImage(mapCanvas, 0, mapTop, width, mapHeight);
+      } catch {
+        this.drawFallbackMap(ctx, width, mapTop, mapHeight, colors);
+      }
+    } else {
+      this.drawFallbackMap(ctx, width, mapTop, mapHeight, colors);
+    }
+    ctx.restore();
+    const routePad = Math.min(width, mapHeight) * .1;
+    const routeXY = this.projectRoute(this.routePoints(), width, mapHeight, routePad).map(([x, y]) => [x, y + mapTop] as [number, number]);
+    ctx.beginPath(); routeXY.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = 'rgba(0,0,0,.42)'; ctx.lineWidth = width * .025; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.beginPath(); routeXY.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = colors.line; ctx.lineWidth = width * .012; ctx.stroke();
+    if (this.hideStart) { const [x, y] = routeXY[0]; ctx.fillStyle = colors.bg; ctx.globalAlpha = .92; ctx.beginPath(); ctx.arc(x, y, width * .08, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+    const [startX, startY] = routeXY[0], [endX, endY] = routeXY.at(-1)!; ctx.fillStyle = colors.bg; ctx.beginPath(); ctx.arc(startX, startY, width * .022, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = colors.line; ctx.beginPath(); ctx.arc(endX, endY, width * .026, 0, Math.PI * 2); ctx.fill();
+    const contentY = this.mapPosition() === 'top' ? height * .67 : height * .12; const alignX = this.textPosition === 'center' ? width / 2 : this.textPosition === 'right' ? width * .88 : width * .12; ctx.textAlign = this.textPosition as CanvasTextAlign; ctx.fillStyle = colors.text;
+    if (this.fields['brand']) { ctx.font = `800 ${Math.round(width * .022)}px Arial`; ctx.fillText('ALON SPORTS', alignX, contentY); }
+    let lineY = contentY + width * .08; if (this.fields['title']) { ctx.font = `800 ${Math.round(width * .052)}px Arial`; ctx.fillText(this.activity().name, alignX, lineY); lineY += width * .045; }
+    if (this.fields['date']) { ctx.fillStyle = colors.muted; ctx.font = `${Math.round(width * .018)}px Arial`; ctx.fillText(`${this.activity().date} · ${this.activity().location}`, alignX, lineY); lineY += width * .08; }
+    if (this.fields['stats']) { const metrics: Array<[string, string]> = []; if (this.fields['distance']) metrics.push([this.activity().distance.toFixed(2), 'KM']); if (this.fields['time']) metrics.push([this.durationLabel(), 'TIEMPO']); if (this.fields['pace']) metrics.push([this.activity().pace, this.activity().sport_type === 'Ride' ? 'VELOCIDAD' : 'RITMO']); if (this.fields['elevation']) metrics.push([String(this.activity().elevation), 'DESNIVEL M']); metrics.forEach(([value, label], index) => { const spread = metrics.length > 1 ? width * .22 : 0; const x = this.textPosition === 'center' ? width / 2 + (index - (metrics.length - 1) / 2) * spread : alignX + index * width * .18; ctx.fillStyle = colors.text; ctx.font = `800 ${Math.round(width * .028)}px Arial`; ctx.fillText(value, x, lineY); ctx.fillStyle = colors.muted; ctx.font = `800 ${Math.round(width * .012)}px Arial`; ctx.fillText(label, x, lineY + width * .026); }); }
+    if (this.fields['slope'] && this.elevationProfile().length > 1) {
+      lineY = this.drawSlopeProfile(ctx, width, lineY + width * .065, colors);
+    }
+    if (this.fields['footer']) { ctx.fillStyle = colors.muted; ctx.font = `800 ${Math.round(width * .012)}px Arial`; ctx.fillText('ALON SPORTS · ACTIVIDAD GPS', alignX, height - width * .08); }
+    const image = canvas.toDataURL('image/png'); this.generatedImage.set(image);
+    const link = document.createElement('a'); link.href = image; link.download = `alon-sports-${this.id}-${this.presetId()}.png`; link.click();
+    this.saveCurrentCard();
+  }
+  private drawFallbackMap(ctx: CanvasRenderingContext2D, width: number, mapTop: number, mapHeight: number, colors: { bg: string; line: string; road: string; text: string; muted: string }) {
     const mapGradient = ctx.createLinearGradient(0, mapTop, width, mapTop + mapHeight);
     mapGradient.addColorStop(0, colors.bg);
     mapGradient.addColorStop(1, this.mapStyle() === 'terrain' ? '#293a31' : colors.bg);
@@ -2789,22 +3173,43 @@ export class SharePage {
       ctx.strokeStyle = colors.road; ctx.lineWidth = Math.max(2, width * .004);
       ctx.beginPath(); ctx.moveTo(-40, mapTop + index * mapHeight * .2); ctx.bezierCurveTo(width * .28, mapTop + index * mapHeight * .2 - 30, width * .62, mapTop + index * mapHeight * .2 + 42, width + 40, mapTop + index * mapHeight * .2 - 8); ctx.stroke();
     }
-    ctx.restore();
-    const routePad = Math.min(width, mapHeight) * .1;
-    const routeXY = this.projectRoute(this.routePoints(), width, mapHeight, routePad).map(([x, y]) => [x, y + mapTop] as [number, number]);
-    ctx.beginPath(); routeXY.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = 'rgba(0,0,0,.42)'; ctx.lineWidth = width * .025; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
-    ctx.beginPath(); routeXY.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = colors.line; ctx.lineWidth = width * .012; ctx.stroke();
-    if (this.hideStart) { const [x, y] = routeXY[0]; ctx.fillStyle = colors.bg; ctx.globalAlpha = .92; ctx.beginPath(); ctx.arc(x, y, width * .08, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
-    const [startX, startY] = routeXY[0], [endX, endY] = routeXY.at(-1)!; ctx.fillStyle = colors.bg; ctx.beginPath(); ctx.arc(startX, startY, width * .022, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = colors.line; ctx.beginPath(); ctx.arc(endX, endY, width * .026, 0, Math.PI * 2); ctx.fill();
-    const contentY = this.mapPosition() === 'top' ? height * .67 : height * .12; const alignX = this.textPosition === 'center' ? width / 2 : this.textPosition === 'right' ? width * .88 : width * .12; ctx.textAlign = this.textPosition as CanvasTextAlign; ctx.fillStyle = colors.text;
-    if (this.fields['brand']) { ctx.font = `800 ${Math.round(width * .022)}px Arial`; ctx.fillText('ALON SPORTS', alignX, contentY); }
-    let lineY = contentY + width * .08; if (this.fields['title']) { ctx.font = `800 ${Math.round(width * .052)}px Arial`; ctx.fillText(this.activity().name, alignX, lineY); lineY += width * .045; }
-    if (this.fields['date']) { ctx.fillStyle = colors.muted; ctx.font = `${Math.round(width * .018)}px Arial`; ctx.fillText(`${this.activity().date} · ${this.activity().location}`, alignX, lineY); lineY += width * .08; }
-    if (this.fields['stats']) { const metrics: Array<[string, string]> = []; if (this.fields['distance']) metrics.push([this.activity().distance.toFixed(2), 'KM']); if (this.fields['time']) metrics.push([this.durationLabel(), 'TIEMPO']); if (this.fields['pace']) metrics.push([this.activity().pace, this.activity().sport_type === 'Ride' ? 'VELOCIDAD' : 'RITMO']); if (this.fields['elevation']) metrics.push([String(this.activity().elevation), 'DESNIVEL M']); metrics.forEach(([value, label], index) => { const spread = metrics.length > 1 ? width * .22 : 0; const x = this.textPosition === 'center' ? width / 2 + (index - (metrics.length - 1) / 2) * spread : alignX + index * width * .18; ctx.fillStyle = colors.text; ctx.font = `800 ${Math.round(width * .028)}px Arial`; ctx.fillText(value, x, lineY); ctx.fillStyle = colors.muted; ctx.font = `800 ${Math.round(width * .012)}px Arial`; ctx.fillText(label, x, lineY + width * .026); }); }
-    if (this.fields['footer']) { ctx.fillStyle = colors.muted; ctx.font = `800 ${Math.round(width * .012)}px Arial`; ctx.fillText('ALON SPORTS · ACTIVIDAD GPS', alignX, height - width * .08); }
-    const image = canvas.toDataURL('image/png'); this.generatedImage.set(image);
-    const link = document.createElement('a'); link.href = image; link.download = `alon-sports-${this.id}-${this.presetId()}.png`; link.click();
-    this.saveCurrentCard();
+    ctx.globalAlpha = 1;
+  }
+  private drawSlopeProfile(ctx: CanvasRenderingContext2D, width: number, top: number, colors: { bg: string; line: string; road: string; text: string; muted: string }) {
+    const chartWidth = width * .76;
+    const chartHeight = Math.min(width * .13, 125);
+    const left = this.textPosition === 'center' ? (width - chartWidth) / 2 : this.textPosition === 'right' ? width * .12 : width * .12;
+    ctx.fillStyle = 'rgba(9,18,10,.58)';
+    ctx.fillRect(left - width * .025, top - width * .025, chartWidth + width * .05, chartHeight + width * .06);
+    ctx.fillStyle = colors.muted;
+    ctx.font = `800 ${Math.round(width * .012)}px Arial`;
+    ctx.textAlign = 'left';
+    ctx.fillText(`PERFIL DE PENDIENTE  +${this.profileGain()} M`, left, top - width * .002);
+    const profile = this.elevationProfile();
+    ctx.beginPath();
+    profile.forEach(([x, y], index) => {
+      const px = left + x / 320 * chartWidth;
+      const py = top + (y - 10) / 46 * chartHeight;
+      index ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.lineTo(left + chartWidth, top + chartHeight);
+    ctx.lineTo(left, top + chartHeight);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(201,244,91,.2)';
+    ctx.fill();
+    ctx.beginPath();
+    profile.forEach(([x, y], index) => {
+      const px = left + x / 320 * chartWidth;
+      const py = top + (y - 10) / 46 * chartHeight;
+      index ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.strokeStyle = colors.line;
+    ctx.lineWidth = Math.max(3, width * .006);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.textAlign = this.textPosition as CanvasTextAlign;
+    return top + chartHeight + width * .08;
   }
   private saveCurrentCard() {
     const preset = this.selectedPreset(); const size = this.sizes.find((item) => item.id === this.cardSize()); const map = this.mapStyles.find((item) => item.id === this.mapStyle());
@@ -3854,25 +4259,12 @@ export class LiveSegmentsPage {
           }
         </div>
       } @else if (section() === 'charts') {
-        <app-route-map
-          [routePoints]="routePoints()"
-          [activityName]="activity().name"
-          [sportLabel]="sportLabel()"
-          [location]="activity().location"
-          [distance]="activity().distance"
-          [duration]="formatDuration(activity().moving_time_seconds)"
-          [pace]="activity().pace"
-          [averageSpeed]="activity().speed"
-          [maxSpeed]="activity().max_speed"
-          [elevation]="activity().elevation"
-          [streams]="detail()?.['streams']"
-        />
         <div class="insight-card">
           <span class="insight-icon"><mat-icon>show_chart</mat-icon></span>
           <div>
-            <strong>Análisis de la salida</strong>
+            <strong>Análisis por tramos</strong>
             <p>
-              {{ streamsLabel() }} Explora ritmo, velocidad, altitud, pulso y zonas de intensidad.
+              {{ streamsLabel() }} Explora cómo se relacionan ritmo, terreno, pulso, cadencia y zonas de intensidad.
             </p>
           </div>
         </div>
