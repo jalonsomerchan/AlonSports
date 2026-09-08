@@ -1639,16 +1639,18 @@ type RouteMapLayer = 'standard' | 'topographic' | 'contrast';
       }
       @if (showInfoMenu()) {
         <div class="map-tool-menu map-info-menu" aria-label="Información visible en el mapa">
-          <span class="map-menu-title">DATOS VISIBLES</span>
+          <span class="map-menu-title">PANEL INFERIOR</span>
           <label><input type="checkbox" [checked]="showKilometers()" (change)="showKilometers.set($any($event.target).checked)" /> Kilómetros</label>
           <label><input type="checkbox" [checked]="showAverageSpeed()" (change)="showAverageSpeed.set($any($event.target).checked)" /> Velocidad media</label>
           <label><input type="checkbox" [checked]="showMaxSpeed()" (change)="showMaxSpeed.set($any($event.target).checked)" /> Velocidad máxima</label>
           <label><input type="checkbox" [checked]="showCadence()" (change)="showCadence.set($any($event.target).checked)" /> Cadencia</label>
           <label><input type="checkbox" [checked]="showDuration()" (change)="showDuration.set($any($event.target).checked)" /> Tiempo en movimiento</label>
           <label><input type="checkbox" [checked]="showElevation()" (change)="showElevation.set($any($event.target).checked)" /> Desnivel</label>
-          <span class="map-menu-title map-menu-title-spaced">RECORRIDO</span>
-          <label><input type="checkbox" [checked]="colorBySpeed()" (change)="colorBySpeed.set($any($event.target).checked)" /> Colorear por velocidad</label>
-          <small class="map-menu-hint">Las flechas muestran el sentido de marcha en los tramos de ida y vuelta.</small>
+          <span class="map-menu-title map-menu-title-spaced">ELEMENTOS DEL MAPA</span>
+          <label><input type="checkbox" [checked]="showMapKilometres()" (change)="showMapKilometres.set($any($event.target).checked)" /> Kilómetros sobre la ruta</label>
+          <label><input type="checkbox" [checked]="showDirection()" (change)="showDirection.set($any($event.target).checked)" /> Sentido de marcha</label>
+          <label><input type="checkbox" [checked]="colorBySpeed()" (change)="colorBySpeed.set($any($event.target).checked)" /> Color por velocidad</label>
+          <small class="map-menu-hint">Los datos de actividad se muestran en el panel inferior; aquí solo se controla la lectura de la trazada.</small>
         </div>
       }
     </div>
@@ -1657,23 +1659,18 @@ type RouteMapLayer = 'standard' | 'topographic' | 'contrast';
       @if (colorBySpeed()) { <span><i class="speed-dot"></i> Velocidad</span> }
       <span><i class="checkpoint-dot"></i> Hitos</span>
     </div>
-    @if (hasVisibleMapData()) {
-      <div class="map-stats" aria-label="Datos visibles de la ruta">
-        <div class="map-stats-heading">
-          <span>DATOS DE LA RUTA</span>
-          @if (colorBySpeed()) {
-            <span class="map-speed-key"><i></i><small>LENTA</small><b></b><small>RÁPIDA</small></span>
-          }
-        </div>
-        @if (showKilometers()) { <span><strong>{{ distanceLabel() }}</strong><small>DISTANCIA</small></span> }
-        @if (showDuration()) { <span><strong>{{ duration() || '—' }}</strong><small>EN MOVIMIENTO</small></span> }
-        @if (showAverageSpeed()) { <span><strong>{{ averageSpeedLabel() }}</strong><small>VELOCIDAD MEDIA</small></span> }
-        @if (showMaxSpeed()) { <span><strong>{{ maxSpeedLabel() }}</strong><small>VELOCIDAD MÁXIMA</small></span> }
-        @if (showCadence()) { <span><strong>{{ cadenceLabel() }}</strong><small>CADENCIA MEDIA</small></span> }
-        @if (showElevation()) { <span><strong>{{ elevationLabel() }}</strong><small>DESNIVEL</small></span> }
-      </div>
-    }
-  </div>`,
+  </div>
+  @if (hasVisibleMapData()) {
+    <div class="map-stats" aria-label="Datos visibles de la actividad">
+      <div class="map-stats-heading"><span>DATOS DE LA ACTIVIDAD</span><small>Panel complementario</small></div>
+      @if (showKilometers()) { <span><strong>{{ distanceLabel() }}</strong><small>DISTANCIA</small></span> }
+      @if (showDuration()) { <span><strong>{{ duration() || '—' }}</strong><small>EN MOVIMIENTO</small></span> }
+      @if (showAverageSpeed()) { <span><strong>{{ averageSpeedLabel() }}</strong><small>VELOCIDAD MEDIA</small></span> }
+      @if (showMaxSpeed()) { <span><strong>{{ maxSpeedLabel() }}</strong><small>VELOCIDAD MÁXIMA</small></span> }
+      @if (showCadence()) { <span><strong>{{ cadenceLabel() }}</strong><small>CADENCIA MEDIA</small></span> }
+      @if (showElevation()) { <span><strong>{{ elevationLabel() }}</strong><small>DESNIVEL</small></span> }
+    </div>
+  }`,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RouteMap implements AfterViewInit, OnDestroy {
@@ -1701,6 +1698,8 @@ export class RouteMap implements AfterViewInit, OnDestroy {
   readonly showDuration = signal(true);
   readonly showElevation = signal(true);
   readonly colorBySpeed = signal(true);
+  readonly showMapKilometres = signal(true);
+  readonly showDirection = signal(true);
   readonly hasVisibleMapData = computed(() => this.showKilometers() || this.showDuration() || this.showAverageSpeed() || this.showMaxSpeed() || this.showCadence() || this.showElevation());
   readonly speedValues = computed(() => this.values('velocity_smooth').map((value) => value * 3.6));
   readonly maxSpeedLabel = computed(() => {
@@ -1745,6 +1744,8 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     this.streams();
     this.colorBySpeed();
     this.showKilometers();
+    this.showMapKilometres();
+    this.showDirection();
     const routeKey = points.length ? `${points.length}:${points[0]?.join(',')}:${points.at(-1)?.join(',')}` : '';
     if (this.styleReady && points.length > 1) {
       this.drawRoute(points, routeKey !== this.lastRouteKey);
@@ -1848,22 +1849,24 @@ export class RouteMap implements AfterViewInit, OnDestroy {
       }
     }
     const arrowStep = Math.max(18, Math.floor(projected.length / 16));
-    for (let index = Math.floor(arrowStep / 2); index < projected.length - 1; index += arrowStep) {
-      const start = projected[Math.max(0, index - 2)];
-      const end = projected[Math.min(projected.length - 1, index + 2)];
-      const current = projected[index];
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const length = Math.max(Math.hypot(dx, dy), 1);
-      const ux = dx / length;
-      const uy = dy / length;
-      const nx = -uy;
-      const ny = ux;
-      const tip = { x: current.x + ux * 7, y: current.y + uy * 7 };
-      const base = { x: current.x - ux * 6, y: current.y - uy * 6 };
-      decorationParts.push(`<polygon class="route-direction-arrow" points="${tip.x.toFixed(1)},${tip.y.toFixed(1)} ${(base.x + nx * 4).toFixed(1)},${(base.y + ny * 4).toFixed(1)} ${(base.x - nx * 4).toFixed(1)},${(base.y - ny * 4).toFixed(1)}" />`);
+    if (this.showDirection()) {
+      for (let index = Math.floor(arrowStep / 2); index < projected.length - 1; index += arrowStep) {
+        const start = projected[Math.max(0, index - 2)];
+        const end = projected[Math.min(projected.length - 1, index + 2)];
+        const current = projected[index];
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.max(Math.hypot(dx, dy), 1);
+        const ux = dx / length;
+        const uy = dy / length;
+        const nx = -uy;
+        const ny = ux;
+        const tip = { x: current.x + ux * 7, y: current.y + uy * 7 };
+        const base = { x: current.x - ux * 6, y: current.y - uy * 6 };
+        decorationParts.push(`<polygon class="route-direction-arrow" points="${tip.x.toFixed(1)},${tip.y.toFixed(1)} ${(base.x + nx * 4).toFixed(1)},${(base.y + ny * 4).toFixed(1)} ${(base.x - nx * 4).toFixed(1)},${(base.y - ny * 4).toFixed(1)}" />`);
+      }
     }
-    if (this.showKilometers()) {
+    if (this.showMapKilometres()) {
       const distances = this.distanceValues(points);
       let nextKilometre = 1;
       distances.forEach((distance, index) => {
