@@ -1657,14 +1657,22 @@ type RouteMapLayer = 'standard' | 'topographic' | 'contrast';
       @if (colorBySpeed()) { <span><i class="speed-dot"></i> Velocidad</span> }
       <span><i class="checkpoint-dot"></i> Hitos</span>
     </div>
-  </div>
-  <div class="map-stats">
-    @if (showKilometers()) { <span><strong>{{ distanceLabel() }}</strong><small>DISTANCIA</small></span> }
-    @if (showDuration()) { <span><strong>{{ duration() || '—' }}</strong><small>EN MOVIMIENTO</small></span> }
-    @if (showAverageSpeed()) { <span><strong>{{ averageSpeedLabel() }}</strong><small>VELOCIDAD MEDIA</small></span> }
-    @if (showMaxSpeed()) { <span><strong>{{ maxSpeedLabel() }}</strong><small>VELOCIDAD MÁXIMA</small></span> }
-    @if (showCadence()) { <span><strong>{{ cadenceLabel() }}</strong><small>CADENCIA MEDIA</small></span> }
-    @if (showElevation()) { <span><strong>{{ elevationLabel() }}</strong><small>DESNIVEL</small></span> }
+    @if (hasVisibleMapData()) {
+      <div class="map-stats" aria-label="Datos visibles de la ruta">
+        <div class="map-stats-heading">
+          <span>DATOS DE LA RUTA</span>
+          @if (colorBySpeed()) {
+            <span class="map-speed-key"><i></i><small>LENTA</small><b></b><small>RÁPIDA</small></span>
+          }
+        </div>
+        @if (showKilometers()) { <span><strong>{{ distanceLabel() }}</strong><small>DISTANCIA</small></span> }
+        @if (showDuration()) { <span><strong>{{ duration() || '—' }}</strong><small>EN MOVIMIENTO</small></span> }
+        @if (showAverageSpeed()) { <span><strong>{{ averageSpeedLabel() }}</strong><small>VELOCIDAD MEDIA</small></span> }
+        @if (showMaxSpeed()) { <span><strong>{{ maxSpeedLabel() }}</strong><small>VELOCIDAD MÁXIMA</small></span> }
+        @if (showCadence()) { <span><strong>{{ cadenceLabel() }}</strong><small>CADENCIA MEDIA</small></span> }
+        @if (showElevation()) { <span><strong>{{ elevationLabel() }}</strong><small>DESNIVEL</small></span> }
+      </div>
+    }
   </div>`,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -1693,6 +1701,7 @@ export class RouteMap implements AfterViewInit, OnDestroy {
   readonly showDuration = signal(true);
   readonly showElevation = signal(true);
   readonly colorBySpeed = signal(true);
+  readonly hasVisibleMapData = computed(() => this.showKilometers() || this.showDuration() || this.showAverageSpeed() || this.showMaxSpeed() || this.showCadence() || this.showElevation());
   readonly speedValues = computed(() => this.values('velocity_smooth').map((value) => value * 3.6));
   readonly maxSpeedLabel = computed(() => {
     const values = this.speedValues().filter((value) => value >= 0);
@@ -2864,6 +2873,78 @@ export class SharePage {
     @if (error()) {
       <p class="api-error">{{ error() }}</p>
     }
+    @if (syncConfirmationOpen()) {
+      <div
+        class="modal-backdrop"
+        role="presentation"
+        tabindex="-1"
+        (click)="closeSyncConfirmation()"
+        (keydown.escape)="closeSyncConfirmation()"
+      >
+        <section
+          class="confirmation-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sync-confirmation-title"
+          (click)="$event.stopPropagation()"
+        >
+          <button
+            class="icon-button modal-close"
+            type="button"
+            aria-label="Cerrar confirmación"
+            (click)="closeSyncConfirmation()"
+          >
+            <mat-icon>close</mat-icon>
+          </button>
+          <span class="confirmation-icon"><mat-icon>check</mat-icon></span>
+          <p class="eyebrow lime">STRAVA SINCRONIZADO</p>
+          <h2 id="sync-confirmation-title">
+            @if (syncImportedCount() === 1) {
+              Actividad importada
+            } @else {
+              Actividades importadas
+            }
+          </h2>
+          @if (syncImportedCount() > 0) {
+            <p class="muted">
+              Se han añadido {{ syncImportedCount() }}
+              {{ syncImportedCount() === 1 ? 'actividad nueva' : 'actividades nuevas' }} desde Strava.
+            </p>
+          } @else {
+            <p class="muted">No hay actividades nuevas para importar.</p>
+          }
+          @if (syncImportedActivities().length) {
+            <div class="imported-activity-list">
+              @for (activity of syncImportedActivities(); track activity.id) {
+                <a class="imported-activity-row" [routerLink]="['/app/activity', activity.id, 'overview']">
+                  <span class="activity-icon" [style.--sport-color]="activity.color">
+                    <mat-icon>{{ activity.sport_type === 'Ride' ? 'directions_bike' : activity.sport_type === 'Walk' ? 'directions_walk' : 'directions_run' }}</mat-icon>
+                  </span>
+                  <span>
+                    <strong>{{ activity.name }}</strong>
+                    <small>{{ activity.date }}</small>
+                  </span>
+                  <mat-icon>arrow_forward</mat-icon>
+                </a>
+              }
+            </div>
+          }
+          @if (syncImportedCount() === 1 && syncImportedActivities().length === 1) {
+            <a
+              class="primary-button full"
+              [routerLink]="['/app/activity', syncImportedActivities()[0].id, 'overview']"
+              (click)="closeSyncConfirmation()"
+            >
+              Ver actividad <mat-icon>arrow_forward</mat-icon>
+            </a>
+          } @else {
+            <button class="outline-button full" type="button" (click)="closeSyncConfirmation()">
+              Continuar
+            </button>
+          }
+        </section>
+      </div>
+    }
   </section>`,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -2879,6 +2960,10 @@ export class ImportPage {
   readonly importing = signal(false);
   readonly imported = signal(false);
   readonly error = signal('');
+  readonly syncConfirmationOpen = signal(false);
+  readonly syncImportedActivities = signal<Activity[]>([]);
+  readonly syncImportedCount = signal(0);
+  private syncKnownActivityIds = new Set<string>();
   selectFile(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0] ?? null;
     this.file = file;
@@ -2890,13 +2975,102 @@ export class ImportPage {
   sync() {
     this.syncing.set(true);
     this.error.set('');
+    this.syncKnownActivityIds = new Set(this.data.activities().map((activity) => activity.id));
     this.api
       .syncActivities()
       .subscribe({
-        next: () => this.data.refresh(),
+        next: (response) => {
+          this.data.refresh();
+          this.resolveSyncConfirmation(response);
+        },
         error: () => this.error.set('No se han podido sincronizar las actividades.'),
         complete: () => this.syncing.set(false),
       });
+  }
+  closeSyncConfirmation() {
+    this.syncConfirmationOpen.set(false);
+  }
+  private resolveSyncConfirmation(response: Record<string, unknown>) {
+    const activities = this.extractSyncActivities(response);
+    const activityIds = this.extractSyncActivityIds(response);
+    const count = this.extractSyncCount(response, activities.length || activityIds.size);
+    if (activities.length || count === 0) {
+      this.openSyncConfirmation(activities, count);
+      return;
+    }
+    this.api.activities(100).subscribe({
+      next: (latest) => {
+        const all = latest.activities.map((item) => this.data.toActivity(item));
+        const fresh = all.filter((activity) =>
+          activityIds.size ? activityIds.has(activity.id) : !this.syncKnownActivityIds.has(activity.id),
+        );
+        this.openSyncConfirmation(fresh.slice(0, count), count);
+      },
+      error: () => this.openSyncConfirmation([], count),
+    });
+  }
+  private openSyncConfirmation(activities: Activity[], count: number) {
+    this.syncImportedActivities.set(activities);
+    this.syncImportedCount.set(Math.max(count, activities.length));
+    this.syncConfirmationOpen.set(true);
+  }
+  private extractSyncActivities(response: Record<string, unknown>) {
+    const singular = response['activity'];
+    const singularActivity = this.toImportedActivity(singular);
+    if (singularActivity) return [singularActivity];
+    const sources = ['imported_activities', 'new_activities', 'imported', 'created', 'activities'];
+    for (const key of sources) {
+      const value = response[key];
+      if (!Array.isArray(value)) continue;
+      const activities = value
+        .map((item) => {
+          const raw = item && typeof item === 'object' && 'activity' in item
+            ? (item as Record<string, unknown>)['activity']
+            : item;
+          return this.toImportedActivity(raw);
+        })
+        .filter((activity): activity is Activity => activity !== null);
+      if (activities.length) return this.uniqueActivities(activities);
+    }
+    return [];
+  }
+  private toImportedActivity(raw: unknown) {
+    if (!raw || typeof raw !== 'object') return null;
+    const record = raw as Record<string, unknown>;
+    const id = record['id'] ?? record['activity_id'];
+    return id === undefined || id === null
+      ? null
+      : this.data.toActivity({ ...record, id });
+  }
+  private extractSyncActivityIds(response: Record<string, unknown>) {
+    const ids = new Set<string>();
+    for (const key of ['imported_ids', 'new_activity_ids', 'activity_ids']) {
+      const value = response[key];
+      if (Array.isArray(value)) value.forEach((id) => ids.add(String(id)));
+    }
+    if (response['activity_id'] !== undefined && response['activity_id'] !== null) {
+      ids.add(String(response['activity_id']));
+    }
+    return ids;
+  }
+  private extractSyncCount(response: Record<string, unknown>, fallback: number) {
+    for (const key of [
+      'imported_count',
+      'imported_activities_count',
+      'new_count',
+      'count',
+      'created_count',
+      'imported',
+    ]) {
+      const value = Number(response[key]);
+      if (Number.isFinite(value)) return Math.max(0, value);
+    }
+    return fallback;
+  }
+  private uniqueActivities(activities: Activity[]) {
+    return activities.filter((activity, index, items) =>
+      items.findIndex((candidate) => candidate.id === activity.id) === index,
+    );
   }
   import() {
     if (!this.file) {
