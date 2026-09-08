@@ -530,9 +530,10 @@ export class ApiService {
       `${this.baseUrl}/segments/${encodeURIComponent(id)}/detail`,
     );
   }
-  statistics(sport?: string) {
+  statistics(sport?: string, period?: string) {
     let params = new HttpParams();
     if (sport) params = params.set('sport', sport);
+    if (period) params = params.set('period', period);
     return this.http.get<Record<string, any>>(`${this.baseUrl}/statistics`, { params });
   }
   analysis() {
@@ -2531,7 +2532,7 @@ export class SegmentEditorPage {
           </div>
           <div class="share-field-group two-fields">
             <label><span class="share-label">POSICIÓN DEL MAPA</span>
-              <select [(ngModel)]="mapPosition"><option value="background">Fondo completo</option><option value="top">Parte superior</option><option value="bottom">Parte inferior</option></select>
+              <select [ngModel]="mapPosition()" (ngModelChange)="mapPosition.set($event)"><option value="background">Fondo completo</option><option value="top">Parte superior</option><option value="bottom">Parte inferior</option></select>
             </label>
             <label><span class="share-label">ALINEACIÓN DEL TEXTO</span>
               <select [(ngModel)]="textPosition"><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select>
@@ -2573,13 +2574,17 @@ export class SegmentEditorPage {
           <div class="share-preview-header"><div><p class="eyebrow">VISTA PREVIA</p><h2>Así se verá tu tarjeta</h2></div><span class="live-dot">EN DIRECTO</span></div>
           <div [class]="'share-card-preview ' + previewClasses()" [style.--preview-align]="textPosition" [style.--preview-justify]="textPosition === 'left' ? 'flex-start' : textPosition === 'right' ? 'flex-end' : 'center'">
             <div [class]="'share-card-map map-bg-' + mapStyle()">
-              <svg viewBox="0 0 360 480" preserveAspectRatio="none" aria-label="Previsualización de la ruta">
-                <path class="preview-road road-one" d="M-30 120 C 50 80, 84 165, 145 140 S 265 65, 395 100" />
-                <path class="preview-road road-two" d="M-40 350 C 58 305, 98 380, 175 322 S 300 245, 400 280" />
+              <svg [attr.viewBox]="'0 0 ' + previewDimensions().width + ' ' + previewDimensions().height" preserveAspectRatio="none" aria-label="Previsualización de la ruta">
+                <g [attr.transform]="'scale(1 ' + previewDimensions().height / 480 + ')'">
+                  <path class="preview-road road-one" d="M-30 120 C 50 80, 84 165, 145 140 S 265 65, 395 100" />
+                  <path class="preview-road road-two" d="M-40 350 C 58 305, 98 380, 175 322 S 300 245, 400 280" />
+                  <path class="preview-road road-three" d="M32 510 C 92 414, 82 322, 138 244 S 250 112, 330 -24" />
+                  <path class="preview-road road-four" d="M-20 228 C 78 204, 156 238, 230 215 S 335 184, 390 202" />
+                </g>
                 <path class="preview-route" [attr.d]="previewRoutePath()" />
-                @if (hideStart) { <circle class="preview-hide-zone" cx="54" cy="365" r="34" /> }
-                <circle class="preview-start" cx="54" cy="365" r="7" />
-                <circle class="preview-finish" cx="306" cy="92" r="8" />
+                @if (hideStart) { <circle class="preview-hide-zone" [attr.cx]="previewRouteStart()[0]" [attr.cy]="previewRouteStart()[1]" r="34" /> }
+                <circle class="preview-start" [attr.cx]="previewRouteStart()[0]" [attr.cy]="previewRouteStart()[1]" r="7" />
+                <circle class="preview-finish" [attr.cx]="previewRouteFinish()[0]" [attr.cy]="previewRouteFinish()[1]" r="8" />
               </svg>
             </div>
             <div class="share-card-overlay"></div>
@@ -2674,7 +2679,7 @@ export class SharePage {
     { id: 'footer', label: 'Pie de tarjeta', description: 'Detalles adicionales' },
   ] as const;
   fields: { brand: boolean; title: boolean; date: boolean; stats: boolean; distance: boolean; time: boolean; pace: boolean; elevation: boolean; footer: boolean } = { brand: true, title: true, date: true, stats: true, distance: true, time: true, pace: true, elevation: false, footer: true };
-  mapPosition: 'background' | 'top' | 'bottom' = 'background';
+  readonly mapPosition = signal<'background' | 'top' | 'bottom'>('background');
   textPosition: 'left' | 'center' | 'right' = 'left';
   hideStart = true;
   readonly shareUrl = computed(() => this.share()?.url ?? '');
@@ -2687,13 +2692,24 @@ export class SharePage {
   });
   readonly sportLabel = computed(() => this.activity().sport_type === 'Ride' ? 'Ciclismo' : this.activity().sport_type === 'Walk' ? 'Caminar' : 'Correr');
   readonly selectedPreset = computed(() => this.presets.find((preset) => preset.id === this.presetId()) ?? this.presets[0]);
+  readonly previewDimensions = computed(() => {
+    const cardHeight = this.cardSize() === 'story' ? 640 : this.cardSize() === 'portrait' ? 450 : 360;
+    const height = this.mapPosition() === 'background' ? cardHeight : cardHeight * .65;
+    return { width: 360, height };
+  });
+  readonly previewRouteGeometry = computed(() => {
+    const dimensions = this.previewDimensions();
+    return this.projectRoute(this.routePoints(), dimensions.width, dimensions.height, Math.min(dimensions.width, dimensions.height) * .1);
+  });
+  readonly previewRouteStart = computed<[number, number]>(() => this.previewRouteGeometry()[0] ?? [36, this.previewDimensions().height - 36]);
+  readonly previewRouteFinish = computed<[number, number]>(() => this.previewRouteGeometry().at(-1) ?? [this.previewDimensions().width - 36, 36]);
   previewClasses() {
-    return `share-card-size-${this.cardSize()} share-preset-${this.presetId()} share-map-position-${this.mapPosition}`;
+    return `share-card-size-${this.cardSize()} share-preset-${this.presetId()} share-map-position-${this.mapPosition()}`;
   }
   allFieldsSelected() {
     return this.fieldOptions.every((field) => this.fields[field.id]);
   }
-  readonly previewRoutePath = computed(() => this.routePath(this.routePoints(), 360, 480));
+  readonly previewRoutePath = computed(() => this.previewRouteGeometry().map(([x, y], index) => `${index ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' '));
   constructor() {
     this.data.loadActivities();
     this.api.activity(this.id).subscribe({ next: (value) => this.detail.set(value), error: () => this.loading.set(false), complete: () => this.loading.set(false) });
@@ -2714,26 +2730,36 @@ export class SharePage {
     this.presetId.set(config.presetId);
     this.cardSize.set(config.cardSize);
     this.mapStyle.set(config.mapStyle);
-    this.mapPosition = config.mapPosition;
+    this.mapPosition.set(config.mapPosition);
     this.textPosition = config.textPosition;
     this.fields = { ...config.fields };
     this.hideStart = config.hideStart;
     this.generatedImage.set('');
   }
-  private routePath(points: [number, number][], width: number, height: number) {
-    const coords = points.map(([lat, lng]) => ({ lat, lng }));
+  private projectRoute(points: [number, number][], width: number, height: number, padding: number): [number, number][] {
+    const coords = points
+      .map(([lat, lng]) => ({ lat: Number(lat), lng: Number(lng) }))
+      .filter(({ lat, lng }) => Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180);
+    if (coords.length < 2) return this.projectRoute(DEFAULT_ROUTE, width, height, padding);
     const minLat = Math.min(...coords.map((point) => point.lat));
     const maxLat = Math.max(...coords.map((point) => point.lat));
     const minLng = Math.min(...coords.map((point) => point.lng));
     const maxLng = Math.max(...coords.map((point) => point.lng));
-    const pad = 42;
-    const latRange = Math.max(maxLat - minLat, 0.0001);
-    const lngRange = Math.max(maxLng - minLng, 0.0001);
-    return coords.map((point, index) => {
-      const x = pad + ((point.lng - minLng) / lngRange) * (width - pad * 2);
-      const y = height - pad - ((point.lat - minLat) / latRange) * (height - pad * 2);
-      return `${index ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    }).join(' ');
+    const centerLat = (minLat + maxLat) / 2;
+    const longitudeScale = Math.max(Math.cos(centerLat * Math.PI / 180), .1);
+    const latitudeRange = Math.max(maxLat - minLat, .000001);
+    const longitudeRange = Math.max((maxLng - minLng) * longitudeScale, .000001);
+    const usableWidth = Math.max(width - padding * 2, 1);
+    const usableHeight = Math.max(height - padding * 2, 1);
+    const scale = Math.min(usableWidth / longitudeRange, usableHeight / latitudeRange);
+    const routeWidth = longitudeRange * scale;
+    const routeHeight = latitudeRange * scale;
+    const offsetX = (width - routeWidth) / 2;
+    const offsetY = (height - routeHeight) / 2;
+    return coords.map((point) => [
+      offsetX + (point.lng - minLng) * longitudeScale * scale,
+      offsetY + (maxLat - point.lat) * scale,
+    ]);
   }
   downloadCard() {
     const canvas = this.exportCanvas?.nativeElement;
@@ -2745,21 +2771,32 @@ export class SharePage {
     const width = canvas.width, height = canvas.height;
     const colors = this.mapStyle() === 'night' ? { bg: '#121912', line: '#c9f45b', road: '#31432d', text: '#f3f7ee', muted: '#9dab98' } : this.mapStyle() === 'paper' ? { bg: '#e9e5d7', line: '#263622', road: '#bdc7ad', text: '#182019', muted: '#54614c' } : { bg: '#3c5143', line: '#e4f0b5', road: '#829a7a', text: '#f7fbeb', muted: '#d1dcc9' };
     ctx.fillStyle = colors.bg; ctx.fillRect(0, 0, width, height);
-    const mapTop = this.mapPosition === 'bottom' ? height * .38 : 0;
-    const mapHeight = this.mapPosition === 'background' ? height : height * .62;
-    ctx.save(); ctx.globalAlpha = this.mapStyle() === 'paper' ? .42 : .32;
-    for (let index = -2; index < 12; index += 1) { ctx.strokeStyle = colors.road; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(index * 180, mapTop); ctx.lineTo(index * 180 + 500, mapTop + mapHeight); ctx.stroke(); }
+    const mapTop = this.mapPosition() === 'bottom' ? height * .35 : 0;
+    const mapHeight = this.mapPosition() === 'background' ? height : height * .65;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, mapTop, width, mapHeight); ctx.clip();
+    const mapGradient = ctx.createLinearGradient(0, mapTop, width, mapTop + mapHeight);
+    mapGradient.addColorStop(0, colors.bg);
+    mapGradient.addColorStop(1, this.mapStyle() === 'terrain' ? '#293a31' : colors.bg);
+    ctx.fillStyle = mapGradient; ctx.fillRect(0, mapTop, width, mapHeight);
+    ctx.globalAlpha = this.mapStyle() === 'paper' ? .3 : .24;
+    for (let index = -3; index < 10; index += 1) {
+      ctx.strokeStyle = colors.road; ctx.lineWidth = Math.max(3, width * .008);
+      ctx.beginPath(); ctx.moveTo(index * width * .22, mapTop - 40); ctx.bezierCurveTo(index * width * .22 + width * .18, mapTop + mapHeight * .28, index * width * .22 + width * .05, mapTop + mapHeight * .68, index * width * .22 + width * .32, mapTop + mapHeight + 40); ctx.stroke();
+    }
+    ctx.globalAlpha = this.mapStyle() === 'paper' ? .14 : .1;
+    for (let index = -2; index < 8; index += 1) {
+      ctx.strokeStyle = colors.road; ctx.lineWidth = Math.max(2, width * .004);
+      ctx.beginPath(); ctx.moveTo(-40, mapTop + index * mapHeight * .2); ctx.bezierCurveTo(width * .28, mapTop + index * mapHeight * .2 - 30, width * .62, mapTop + index * mapHeight * .2 + 42, width + 40, mapTop + index * mapHeight * .2 - 8); ctx.stroke();
+    }
     ctx.restore();
-    const routeCoords = this.routePoints().map(([lat, lng]) => ({ lat, lng }));
-    const minLat = Math.min(...routeCoords.map((point) => point.lat)), maxLat = Math.max(...routeCoords.map((point) => point.lat));
-    const minLng = Math.min(...routeCoords.map((point) => point.lng)), maxLng = Math.max(...routeCoords.map((point) => point.lng));
-    const routePad = width * .12, latRange = Math.max(maxLat - minLat, .0001), lngRange = Math.max(maxLng - minLng, .0001);
-    const routeXY = routeCoords.map((point) => [routePad + ((point.lng - minLng) / lngRange) * (width - routePad * 2), mapTop + mapHeight - routePad - ((point.lat - minLat) / latRange) * (mapHeight - routePad * 2)] as [number, number]);
+    const routePad = Math.min(width, mapHeight) * .1;
+    const routeXY = this.projectRoute(this.routePoints(), width, mapHeight, routePad).map(([x, y]) => [x, y + mapTop] as [number, number]);
     ctx.beginPath(); routeXY.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = 'rgba(0,0,0,.42)'; ctx.lineWidth = width * .025; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
     ctx.beginPath(); routeXY.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = colors.line; ctx.lineWidth = width * .012; ctx.stroke();
     if (this.hideStart) { const [x, y] = routeXY[0]; ctx.fillStyle = colors.bg; ctx.globalAlpha = .92; ctx.beginPath(); ctx.arc(x, y, width * .08, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
     const [startX, startY] = routeXY[0], [endX, endY] = routeXY.at(-1)!; ctx.fillStyle = colors.bg; ctx.beginPath(); ctx.arc(startX, startY, width * .022, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = colors.line; ctx.beginPath(); ctx.arc(endX, endY, width * .026, 0, Math.PI * 2); ctx.fill();
-    const contentY = this.mapPosition === 'top' ? height * .67 : height * .12; const alignX = this.textPosition === 'center' ? width / 2 : this.textPosition === 'right' ? width * .88 : width * .12; ctx.textAlign = this.textPosition as CanvasTextAlign; ctx.fillStyle = colors.text;
+    const contentY = this.mapPosition() === 'top' ? height * .67 : height * .12; const alignX = this.textPosition === 'center' ? width / 2 : this.textPosition === 'right' ? width * .88 : width * .12; ctx.textAlign = this.textPosition as CanvasTextAlign; ctx.fillStyle = colors.text;
     if (this.fields['brand']) { ctx.font = `800 ${Math.round(width * .022)}px Arial`; ctx.fillText('ALON SPORTS', alignX, contentY); }
     let lineY = contentY + width * .08; if (this.fields['title']) { ctx.font = `800 ${Math.round(width * .052)}px Arial`; ctx.fillText(this.activity().name, alignX, lineY); lineY += width * .045; }
     if (this.fields['date']) { ctx.fillStyle = colors.muted; ctx.font = `${Math.round(width * .018)}px Arial`; ctx.fillText(`${this.activity().date} · ${this.activity().location}`, alignX, lineY); lineY += width * .08; }
@@ -2771,7 +2808,7 @@ export class SharePage {
   }
   private saveCurrentCard() {
     const preset = this.selectedPreset(); const size = this.sizes.find((item) => item.id === this.cardSize()); const map = this.mapStyles.find((item) => item.id === this.mapStyle());
-    this.savedCards.update((cards) => [...cards.filter((card) => card.presetId !== preset.id || card.sizeLabel !== size?.label), { id: Date.now(), label: preset.label, icon: this.cardSize() === 'story' ? 'phone_android' : this.cardSize() === 'portrait' ? 'crop_portrait' : 'crop_square', presetId: preset.id, sizeLabel: size?.label ?? '', mapLabel: map?.label ?? '', config: { presetId: this.presetId(), cardSize: this.cardSize(), mapStyle: this.mapStyle(), mapPosition: this.mapPosition, textPosition: this.textPosition, fields: { ...this.fields }, hideStart: this.hideStart } }]);
+    this.savedCards.update((cards) => [...cards.filter((card) => card.presetId !== preset.id || card.sizeLabel !== size?.label), { id: Date.now(), label: preset.label, icon: this.cardSize() === 'story' ? 'phone_android' : this.cardSize() === 'portrait' ? 'crop_portrait' : 'crop_square', presetId: preset.id, sizeLabel: size?.label ?? '', mapLabel: map?.label ?? '', config: { presetId: this.presetId(), cardSize: this.cardSize(), mapStyle: this.mapStyle(), mapPosition: this.mapPosition(), textPosition: this.textPosition, fields: { ...this.fields }, hideStart: this.hideStart } }]);
   }
   nativeShareImage() {
     const url = this.generatedImage(); if (!url) { this.downloadCard(); return; }
