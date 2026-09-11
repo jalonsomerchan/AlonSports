@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, AfterViewInit, computed, effect, inject, input, output, signal, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, OnDestroy, AfterViewInit, computed, effect, inject, input, output, signal, untracked, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
@@ -22,6 +22,13 @@ function clamp(value: number, min: number, max: number) { return Math.max(min, M
     <div class="segment-selection">
       <div class="selection-map maplibre-shell">
         <div #map class="maplibre-host"></div>
+        <svg #routeOverlay class="selection-route-overlay" [attr.viewBox]="routeViewBox()" role="img" aria-label="Ruta de la actividad" (click)="onRouteClick($event)">
+          <polyline class="selection-route-full" [attr.points]="routePolyline()"></polyline>
+          <polyline class="selection-route-selected" [attr.points]="selectedPolyline()"></polyline>
+          <circle class="selection-route-playhead" [attr.cx]="playPosition().x" [attr.cy]="playPosition().y" r="10"></circle>
+          <circle class="selection-route-marker start" [attr.cx]="startPosition().x" [attr.cy]="startPosition().y" r="18" (pointerdown)="beginMarkerDrag('start', $event)"></circle>
+          <circle class="selection-route-marker end" [attr.cx]="endPosition().x" [attr.cy]="endPosition().y" r="18" (pointerdown)="beginMarkerDrag('end', $event)"></circle>
+        </svg>
         <div class="selection-map-topline"><span class="live-dot"></span> PREVISUALIZACIÓN DEL TRAMO <span class="topline-hint">Arrastra los marcadores o pulsa el recorrido</span></div>
         <div class="selection-handles">
           <button type="button" [class.active]="activeHandle() === 'start'" (click)="activeHandle.set('start')"><span class="handle-number">1</span><span><small>INICIO</small><strong>{{ formatDistance(startDistance()) }}</strong></span><mat-icon>my_location</mat-icon></button>
@@ -51,10 +58,26 @@ function clamp(value: number, min: number, max: number) { return Math.max(min, M
       </div>
     </div>
   `,
+  styles: [`
+    :host { display: block; }
+    .selection-map { position: relative; isolation: isolate; background: radial-gradient(circle at 70% 18%, #40533a, #253022 62%, #172117); }
+    .selection-map::after { content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: .34; background-image: linear-gradient(28deg, transparent 47%, rgba(175, 201, 151, .16) 48%, transparent 49%), linear-gradient(112deg, transparent 45%, rgba(175, 201, 151, .12) 46%, transparent 47%), linear-gradient(0deg, transparent 74%, rgba(8, 16, 8, .32)); }
+    .selection-map .maplibre-host { z-index: 0; opacity: .2; filter: saturate(.25) brightness(.6); }
+    .selection-route-overlay { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; overflow: visible; touch-action: none; cursor: crosshair; }
+    .selection-route-overlay polyline { fill: none; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    .selection-route-full { stroke: rgba(190, 211, 170, .68); stroke-width: 18; }
+    .selection-route-selected { stroke: #c9f45b; stroke-width: 25; filter: drop-shadow(0 0 8px rgba(201, 244, 91, .48)); }
+    .selection-route-playhead { fill: #fff; stroke: #15200f; stroke-width: 7; pointer-events: none; }
+    .selection-route-marker { stroke: #11180f; stroke-width: 7; cursor: grab; filter: drop-shadow(0 7px 10px rgba(0, 0, 0, .42)); }
+    .selection-route-marker:active { cursor: grabbing; }
+    .selection-route-marker.start { fill: #f1f5e8; }
+    .selection-route-marker.end { fill: #c9f45b; }
+  `],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   @ViewChild('map', { static: true }) private mapElement!: ElementRef<HTMLDivElement>;
+  @ViewChild('routeOverlay', { static: true }) private routeOverlayElement!: ElementRef<SVGSVGElement>;
   readonly points = input<[number, number][]>(FALLBACK_ROUTE);
   readonly startIndex = input(2);
   readonly endIndex = input(8);
@@ -73,13 +96,32 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   readonly endRatio = computed(() => this.ratio(this.endIndex()));
   readonly currentRatio = computed(() => this.ratio(this.playIndex()));
   readonly selectionWidth = computed(() => Math.max(0, this.endRatio() - this.startRatio()));
+  readonly focusIndex = signal<number | null>(null);
+  readonly projectedRoute = computed(() => this.projectRoute(this.points()));
+  readonly routePolyline = computed(() => this.projectedRoute().map(point => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '));
+  readonly selectedPolyline = computed(() => this.projectedRoute().slice(this.startIndex(), this.endIndex() + 1).map(point => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '));
+  readonly startPosition = computed(() => this.projectedRoute()[clamp(this.startIndex(), 0, Math.max(0, this.projectedRoute().length - 1))] ?? { x: 500, y: 280 });
+  readonly endPosition = computed(() => this.projectedRoute()[clamp(this.endIndex(), 0, Math.max(0, this.projectedRoute().length - 1))] ?? { x: 500, y: 280 });
+  readonly playPosition = computed(() => this.projectedRoute()[clamp(this.playIndex(), 0, Math.max(0, this.projectedRoute().length - 1))] ?? { x: 500, y: 280 });
+  readonly routeViewBox = computed(() => {
+    const focus = this.focusIndex();
+    const route = this.projectedRoute();
+    if (focus === null || !route.length) return '0 0 1000 560';
+    const point = route[clamp(focus, 0, route.length - 1)];
+    const width = 420;
+    const height = 300;
+    const x = clamp(point.x - width / 2, 0, 1000 - width);
+    const y = clamp(point.y - height / 2, 0, 560 - height);
+    return `${x} ${y} ${width} ${height}`;
+  });
   private map?: maplibregl.Map;
   private maplibre?: typeof import('maplibre-gl');
   private styleReady = false;
   private routeMarkers: maplibregl.Marker[] = [];
   private playbackTimer?: number;
   private lastFitRouteKey = '';
-  private readonly redraw = effect(() => { const points = this.points(); if (this.styleReady && points.length > 1) this.drawRoute(points); });
+  private draggingHandle: 'start' | 'end' | null = null;
+  private readonly redraw = effect(() => { const points = this.points(); if (this.styleReady && points.length > 1) untracked(() => this.drawRoute(points)); });
 
   async ngAfterViewInit() {
     if (typeof window === 'undefined') return;
@@ -174,7 +216,8 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   }
 
   private focusOnIndex(index: number) {
-    if (!this.map || !this.maplibre || !this.points().length) return;
+    this.focusIndex.set(index);
+    if (!this.map || !this.maplibre || !this.styleReady || !this.points().length) return;
     const point = this.points()[clamp(index, 0, this.points().length - 1)];
     if (!point) return;
     // Activity points use [latitude, longitude]; MapLibre expects [longitude, latitude].
@@ -186,6 +229,61 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
       duration: 350,
       essential: true,
     });
+  }
+
+  beginMarkerDrag(type: 'start' | 'end', event: PointerEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.draggingHandle = type;
+    this.activeHandle.set(type);
+    this.focusOnIndex(type === 'start' ? this.startIndex() : this.endIndex());
+  }
+
+  @HostListener('document:pointermove', ['$event'])
+  onMarkerDrag(event: PointerEvent) {
+    if (!this.draggingHandle || !this.routeOverlayElement) return;
+    const index = this.nearestRouteIndex(event);
+    if (this.draggingHandle === 'start') this.setStart(index); else this.setEnd(index);
+  }
+
+  @HostListener('document:pointerup')
+  endMarkerDrag() { this.draggingHandle = null; }
+
+  onRouteClick(event: MouseEvent) {
+    if (this.draggingHandle) return;
+    const index = this.nearestRouteIndex(event);
+    if (this.activeHandle() === 'start') this.setStart(index); else this.setEnd(index);
+  }
+
+  private nearestRouteIndex(event: MouseEvent | PointerEvent) {
+    const route = this.projectedRoute();
+    const rect = this.routeOverlayElement.nativeElement.getBoundingClientRect();
+    const [viewX, viewY, viewWidth, viewHeight] = this.routeViewBox().split(' ').map(Number);
+    const x = viewX + clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1) * viewWidth;
+    const y = viewY + clamp((event.clientY - rect.top) / Math.max(1, rect.height), 0, 1) * viewHeight;
+    let nearest = 0;
+    let distance = Number.POSITIVE_INFINITY;
+    route.forEach((point, index) => {
+      const next = Math.hypot(point.x - x, point.y - y);
+      if (next < distance) { distance = next; nearest = index; }
+    });
+    return nearest;
+  }
+
+  private projectRoute(points: [number, number][]) {
+    const numeric = points.map(([latitude, longitude]) => ({ latitude: Number(latitude), longitude: Number(longitude) }));
+    const valid = numeric.filter(point => Number.isFinite(point.latitude) && Number.isFinite(point.longitude));
+    if (valid.length < 2) return numeric.map((_, index) => ({ x: points.length > 1 ? index / (points.length - 1) * 1000 : 500, y: 280 }));
+    const minLatitude = Math.min(...valid.map(point => point.latitude));
+    const maxLatitude = Math.max(...valid.map(point => point.latitude));
+    const minLongitude = Math.min(...valid.map(point => point.longitude));
+    const maxLongitude = Math.max(...valid.map(point => point.longitude));
+    const latitudeSpan = Math.max(0.000001, maxLatitude - minLatitude);
+    const longitudeSpan = Math.max(0.000001, maxLongitude - minLongitude);
+    return numeric.map(point => ({
+      x: Number.isFinite(point.longitude) ? (point.longitude - minLongitude) / longitudeSpan * 1000 : 500,
+      y: Number.isFinite(point.latitude) ? (maxLatitude - point.latitude) / latitudeSpan * 560 : 280,
+    }));
   }
 
   private nearestIndex(latlng: [number, number]) { const distances = this.points().map(point => distanceBetween(point, latlng)); return distances.indexOf(Math.min(...distances)); }
