@@ -177,7 +177,8 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
     if (!this.map || !this.maplibre || !this.points().length) return;
     const point = this.points()[clamp(index, 0, this.points().length - 1)];
     if (!point) return;
-    const [longitude, latitude] = point;
+    // Activity points use [latitude, longitude]; MapLibre expects [longitude, latitude].
+    const [longitude, latitude] = [point[1], point[0]];
     this.map.stop();
     this.map.easeTo({
       center: [longitude, latitude],
