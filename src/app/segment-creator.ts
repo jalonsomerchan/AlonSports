@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, AfterViewInit, computed, effect, inject, input, output, signal, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import type * as maplibregl from 'maplibre-gl';
 import type { GeoJSON as GeoJSONData } from 'geojson';
@@ -41,8 +41,8 @@ function clamp(value: number, min: number, max: number) { return Math.max(min, M
           <div class="track-base"></div>
           <div class="track-progress" [style.width.%]="currentRatio()"></div>
           <div class="track-selection" [style.left.%]="startRatio()" [style.width.%]="selectionWidth()"></div>
-          <input class="range-input range-start" type="range" min="0" [max]="maxIndex()" [value]="startIndex()" aria-label="Inicio del segmento" (input)="onStartInput($event)" />
-          <input class="range-input range-end" type="range" min="0" [max]="maxIndex()" [value]="endIndex()" aria-label="Final del segmento" (input)="onEndInput($event)" />
+          <input class="range-input range-start" type="range" min="0" [max]="maxIndex()" [value]="startIndex()" aria-label="Inicio del segmento" [attr.aria-valuetext]="'Inicio en ' + formatDistance(startDistance())" (input)="onStartInput($event)" />
+          <input class="range-input range-end" type="range" min="0" [max]="maxIndex()" [value]="endIndex()" aria-label="Final del segmento" [attr.aria-valuetext]="'Final en ' + formatDistance(endDistance())" (input)="onEndInput($event)" />
           <span class="timeline-playhead" [style.left.%]="currentRatio()"></span>
           <span class="range-label start-label" [style.left.%]="startRatio()">INICIO</span>
           <span class="range-label end-label" [style.left.%]="endRatio()">FINAL</span>
@@ -107,8 +107,16 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
 
   onStartInput(event: Event) { this.setStart(Number((event.target as HTMLInputElement).value)); }
   onEndInput(event: Event) { this.setEnd(Number((event.target as HTMLInputElement).value)); }
-  private setStart(value: number) { this.startChange.emit(clamp(Math.min(value, this.endIndex() - 2), 0, Math.max(0, this.maxIndex() - 2))); this.playIndex.set(Math.max(this.playIndex(), value)); }
-  private setEnd(value: number) { this.endChange.emit(clamp(Math.max(value, this.startIndex() + 2), 2, this.maxIndex())); }
+  private setStart(value: number) {
+    const next = clamp(Math.min(value, this.endIndex() - 2), 0, Math.max(0, this.maxIndex() - 2));
+    this.startChange.emit(next);
+    this.playIndex.set(clamp(Math.max(this.playIndex(), next), next, this.endIndex()));
+  }
+  private setEnd(value: number) {
+    const next = clamp(Math.max(value, this.startIndex() + 2), 2, this.maxIndex());
+    this.endChange.emit(next);
+    this.playIndex.set(clamp(this.playIndex(), this.startIndex(), next));
+  }
 
   private selectNearest(latlng: [number, number]) {
     const points = this.points();
@@ -206,6 +214,7 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SegmentCreatorPage {
+  private readonly route = inject(ActivatedRoute);
   private readonly api = inject(ApiService);
   private readonly data = inject(SportsDataStore);
   readonly activities = computed(() => this.data.activities());
@@ -214,33 +223,46 @@ export class SegmentCreatorPage {
   readonly saving = signal(false);
   readonly saved = signal(false);
   readonly error = signal('');
-  readonly activityId = signal('');
+  readonly activityId = signal(
+    this.route.snapshot.queryParamMap.get('activity')
+      ?? this.route.snapshot.queryParamMap.get('activity_id')
+      ?? '',
+  );
   name = '';
   start = 2;
   end = 8;
   radius = 80;
   color = '#c9f45b';
+  private activityMapRequest = 0;
   private readonly autoSelect = effect(() => { const first = this.activities()[0]; if (first && !this.activityId()) { this.activityId.set(first.id); this.loadActivityMap(first.id); } });
   readonly selectedActivity = computed<Activity | undefined>(() => this.activities().find(activity => activity.id === this.activityId()));
   readonly startDistance = computed(() => this.distanceAt(this.start));
   readonly endDistance = computed(() => this.distanceAt(this.end));
   readonly segmentDistance = computed(() => Math.max(0, this.endDistance() - this.startDistance()));
 
-  constructor() { this.data.loadActivities(); }
+  constructor() {
+    this.data.loadActivities();
+    if (this.activityId()) this.loadActivityMap(this.activityId());
+  }
 
   loadActivityMap(id: string) {
+    const request = ++this.activityMapRequest;
     this.activityId.set(id); this.saved.set(false); this.error.set('');
-    if (!id) { this.routePoints.set(FALLBACK_ROUTE); this.start = 2; this.end = 8; return; }
+    if (!id) { this.routePoints.set(FALLBACK_ROUTE); this.start = 2; this.end = 8; this.routeLoading.set(false); return; }
     this.routeLoading.set(true);
     this.api.activityMap(id).subscribe({
       next: response => {
+        if (request !== this.activityMapRequest) return;
         const points = response.map?.points;
         this.routePoints.set(Array.isArray(points) && points.length > 2 ? points as [number, number][] : FALLBACK_ROUTE);
         this.start = Math.max(0, Math.floor(this.routePoints().length * .18));
         this.end = Math.min(this.routePoints().length - 1, Math.max(this.start + 2, Math.floor(this.routePoints().length * .72)));
       },
-      error: () => { this.routePoints.set(FALLBACK_ROUTE); this.start = 2; this.end = 8; this.routeLoading.set(false); },
-      complete: () => this.routeLoading.set(false),
+      error: () => {
+        if (request !== this.activityMapRequest) return;
+        this.routePoints.set(FALLBACK_ROUTE); this.start = 2; this.end = 8; this.routeLoading.set(false);
+      },
+      complete: () => { if (request === this.activityMapRequest) this.routeLoading.set(false); },
     });
   }
 

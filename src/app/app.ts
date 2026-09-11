@@ -2654,18 +2654,23 @@ export class SegmentEditorPage {
   }
 }
 
-type ShareMapStyle = 'night' | 'paper' | 'terrain';
+type ShareMapStyle = 'night' | 'paper' | 'terrain' | 'satellite';
 
 @Component({
   selector: 'app-share-map-preview',
   template: `
     <div #map class="share-map-preview-host" aria-label="Mapa real del recorrido"></div>
-    <span class="share-map-attribution">© OpenStreetMap</span>
+    <svg #routeOverlay class="share-map-route-overlay" aria-hidden="true" focusable="false">
+      <polyline class="share-map-route-shadow"></polyline>
+      <polyline class="share-map-route-line"></polyline>
+    </svg>
+    <span class="share-map-attribution">{{ mapStyle() === 'satellite' ? '© Esri' : '© OpenStreetMap' }}</span>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ShareMapPreview implements AfterViewInit, OnDestroy {
   @ViewChild('map', { static: true }) private mapElement!: ElementRef<HTMLDivElement>;
+  @ViewChild('routeOverlay', { static: true }) private routeOverlayElement!: ElementRef<SVGSVGElement>;
   readonly routePoints = input<[number, number][]>([]);
   readonly mapStyle = input<ShareMapStyle>('night');
   readonly hideStart = input(true);
@@ -2704,6 +2709,11 @@ export class ShareMapPreview implements AfterViewInit, OnDestroy {
     this.map.once('style.load', render);
     this.map.once('load', render);
     this.map.once('idle', render);
+    const refreshOverlay = () => this.updateRouteOverlay(toMapLibreCoordinates(this.routePoints()));
+    this.map.on('move', refreshOverlay);
+    this.map.on('resize', refreshOverlay);
+    this.map.on('rotate', refreshOverlay);
+    this.map.on('pitch', refreshOverlay);
     this.resizeObserver = new ResizeObserver(() => this.map?.resize());
     this.resizeObserver.observe(this.mapElement.nativeElement);
   }
@@ -2766,6 +2776,7 @@ export class ShareMapPreview implements AfterViewInit, OnDestroy {
       coords.slice(1).forEach((point) => bounds.extend(point));
       this.map.fitBounds(bounds, { padding: 34, maxZoom: 15, duration: 0 });
     }
+    window.requestAnimationFrame(() => this.updateRouteOverlay(coords));
   }
 
   private applyStyle(style: ShareMapStyle) {
@@ -2780,6 +2791,27 @@ export class ShareMapPreview implements AfterViewInit, OnDestroy {
     if (this.map.getLayer('topographic-raster')) {
       this.map.setLayoutProperty('topographic-raster', 'visibility', style === 'terrain' ? 'visible' : 'none');
     }
+    if (this.map.getLayer('satellite-raster')) {
+      this.map.setLayoutProperty('satellite-raster', 'visibility', style === 'satellite' ? 'visible' : 'none');
+    }
+    if (style === 'satellite' && this.map.getLayer('osm-raster')) {
+      this.map.setLayoutProperty('osm-raster', 'visibility', 'none');
+    }
+  }
+
+  private updateRouteOverlay(coords: [number, number][]) {
+    if (!this.map || !this.routeOverlayElement || coords.length < 2) return;
+    const svg = this.routeOverlayElement.nativeElement;
+    const width = this.mapElement.nativeElement.clientWidth;
+    const height = this.mapElement.nativeElement.clientHeight;
+    if (width <= 0 || height <= 0) return;
+    const points = coords.map(([longitude, latitude]) => {
+      const point = this.map!.project({ lng: longitude, lat: latitude });
+      return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+    }).join(' ');
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.querySelector<SVGPolylineElement>('.share-map-route-shadow')?.setAttribute('points', points);
+    svg.querySelector<SVGPolylineElement>('.share-map-route-line')?.setAttribute('points', points);
   }
 
   captureCanvas() {
@@ -2975,7 +3007,7 @@ export class SharePage {
   readonly generatedImage = signal('');
   readonly presetId = signal<'route' | 'stats' | 'minimal'>('route');
   readonly cardSize = signal<'square' | 'portrait' | 'story'>('square');
-  readonly mapStyle = signal<'night' | 'paper' | 'terrain'>('night');
+  readonly mapStyle = signal<ShareMapStyle>('night');
   readonly savedCards = signal<Array<{ id: number; label: string; icon: string; presetId: string; sizeLabel: string; mapLabel: string; config: any }>>([]);
   readonly presets = [
     { id: 'route' as const, label: 'Ruta protagonista', description: 'Mapa a pantalla completa' },
@@ -2987,10 +3019,11 @@ export class SharePage {
     { id: 'portrait' as const, label: 'Vertical', icon: 'crop_portrait' },
     { id: 'story' as const, label: 'Story', icon: 'phone_android' },
   ];
-  readonly mapStyles = [
+  readonly mapStyles: { id: ShareMapStyle; label: string }[] = [
     { id: 'night' as const, label: 'Noche' },
     { id: 'paper' as const, label: 'Papel' },
     { id: 'terrain' as const, label: 'Relieve' },
+    { id: 'satellite' as const, label: 'Satélite' },
   ];
   readonly fieldOptions = [
     { id: 'brand', label: 'Marca', description: 'Alon Sports' },
@@ -4056,6 +4089,8 @@ export class LiveSegmentsPage {
   template: `<section class="page activity-page">
     <div class="back-row">
       <a routerLink="/app/activities"><mat-icon>arrow_back</mat-icon> Actividades</a
+      ><a class="outline-button activity-segment-link" [routerLink]="['/app/segments/new']" [queryParams]="{ activity: id }"
+        ><mat-icon>content_cut</mat-icon><span>Crear segmento</span></a
       ><a class="icon-button" [routerLink]="['/app/activity', id, 'share']"
         ><mat-icon>share</mat-icon></a
       >
