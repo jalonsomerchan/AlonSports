@@ -363,6 +363,15 @@ export class SegmentCreatorPage {
     if (!this.activityId()) { this.error.set('Selecciona una actividad de referencia.'); return; }
     if (this.end <= this.start + 1) { this.error.set('El segmento debe incluir al menos tres puntos.'); return; }
     this.saving.set(true); this.error.set('');
-    this.api.createSegment({ activity_id: this.activityId(), name: this.name.trim() || 'Nuevo segmento', start_index: this.start, end_index: this.end, color: this.color, radius: this.radius }).subscribe({ next: () => { this.saved.set(true); this.data.loadSegments(true); }, error: () => this.error.set('No se ha podido guardar el segmento.'), complete: () => this.saving.set(false) });
+    this.api.createSegment({ activity_id: this.activityId(), name: this.name.trim() || 'Nuevo segmento', start_index: this.start, end_index: this.end, color: this.color, radius: this.radius }).subscribe({
+      next: () => { this.saved.set(true); this.data.loadSegments(true); },
+      error: (response: any) => {
+        const message = String(response?.error?.error ?? '');
+        this.error.set(response?.status === 401 || response?.status === 419 || message.toLowerCase().includes('sesión')
+          ? 'La sesión ha caducado. Inicia sesión de nuevo para guardar el segmento.'
+          : 'No se ha podido guardar el segmento.');
+      },
+      complete: () => this.saving.set(false),
+    });
   }
 }
