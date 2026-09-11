@@ -1934,6 +1934,7 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     this.showKilometers();
     this.showMapKilometres();
     this.showDirection();
+    this.activityName();
     const routeKey = points.length ? `${points.length}:${points[0]?.join(',')}:${points.at(-1)?.join(',')}` : '';
     if (this.styleReady && points.length > 1) {
       this.drawRoute(points, routeKey !== this.lastRouteKey);
@@ -2056,12 +2057,13 @@ export class RouteMap implements AfterViewInit, OnDestroy {
     }
     if (this.showMapKilometres()) {
       const distances = this.distanceValues(points);
-      let nextKilometre = 1;
+      const kilometreStep = this.activityName() ? 5 : 1;
+      let nextKilometre = kilometreStep;
       distances.forEach((distance, index) => {
         if (distance < nextKilometre * 1000 || index === 0 || index >= projected.length) return;
         const point = projected[index];
         decorationParts.push(`<g class="route-kilometre-marker"><circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="10" /><text x="${point.x.toFixed(1)}" y="${(point.y + 3).toFixed(1)}">${nextKilometre}</text></g>`);
-        nextKilometre += 1;
+        nextKilometre += kilometreStep;
       });
     }
     decorations.innerHTML = decorationParts.join('');
