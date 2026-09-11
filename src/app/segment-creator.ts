@@ -216,7 +216,7 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
     this.map.stop();
     this.map.easeTo({
       center: [longitude, latitude],
-      zoom: Math.min(18, Math.max(17, this.map.getZoom() + 2)),
+      zoom: Math.min(16, Math.max(14.5, this.map.getZoom() + 1)),
       duration: 350,
       essential: true,
     });
