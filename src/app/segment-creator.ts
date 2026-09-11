@@ -78,6 +78,7 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
   private styleReady = false;
   private routeMarkers: maplibregl.Marker[] = [];
   private playbackTimer?: number;
+  private lastFitRouteKey = '';
   private readonly redraw = effect(() => { const points = this.points(); if (this.styleReady && points.length > 1) this.drawRoute(points); });
 
   async ngAfterViewInit() {
@@ -111,11 +112,13 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
     const next = clamp(Math.min(value, this.endIndex() - 2), 0, Math.max(0, this.maxIndex() - 2));
     this.startChange.emit(next);
     this.playIndex.set(clamp(Math.max(this.playIndex(), next), next, this.endIndex()));
+    this.focusOnIndex(next);
   }
   private setEnd(value: number) {
     const next = clamp(Math.max(value, this.startIndex() + 2), 2, this.maxIndex());
     this.endChange.emit(next);
     this.playIndex.set(clamp(this.playIndex(), this.startIndex(), next));
+    this.focusOnIndex(next);
   }
 
   private selectNearest(latlng: [number, number]) {
@@ -148,9 +151,13 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
       this.createMarker(points[start], 'start', 'Inicio', index => this.setStart(index)),
       this.createMarker(points[end], 'end', 'Final', index => this.setEnd(index)),
     ];
-    const bounds = new this.maplibre!.LngLatBounds(coords[0], coords[0]);
-    coords.slice(1).forEach(point => bounds.extend(point));
-    this.map.fitBounds(bounds, { padding: 42, maxZoom: 16, duration: 0 });
+    const routeKey = `${coords.length}:${coords[0]?.join(',')}:${coords.at(-1)?.join(',')}`;
+    if (routeKey !== this.lastFitRouteKey) {
+      this.lastFitRouteKey = routeKey;
+      const bounds = new this.maplibre!.LngLatBounds(coords[0], coords[0]);
+      coords.slice(1).forEach(point => bounds.extend(point));
+      this.map.fitBounds(bounds, { padding: 42, maxZoom: 16, duration: 0 });
+    }
   }
 
   private createMarker(point: [number, number], type: 'start' | 'end', label: string, update: (index: number) => void) {
@@ -158,9 +165,26 @@ export class SegmentSelectionMap implements AfterViewInit, OnDestroy {
     icon.className = `segment-handle-marker handle-pin ${type}`;
     icon.innerHTML = `<b>${type === 'start' ? '1' : '2'}</b><em>${label}</em>`;
     const marker = new this.maplibre!.Marker({ element: icon, draggable: true }).setLngLat([point[1], point[0]]).addTo(this.map!);
-    marker.on('dragstart', () => this.activeHandle.set(type));
+    marker.on('dragstart', () => {
+      this.activeHandle.set(type);
+      this.focusOnIndex(type === 'start' ? this.startIndex() : this.endIndex());
+    });
     marker.on('dragend', () => { const dragged = marker.getLngLat(); const index = this.nearestIndex([dragged.lat, dragged.lng]); update(index); });
     return marker;
+  }
+
+  private focusOnIndex(index: number) {
+    if (!this.map || !this.maplibre || !this.points().length) return;
+    const point = this.points()[clamp(index, 0, this.points().length - 1)];
+    if (!point) return;
+    const [longitude, latitude] = point;
+    this.map.stop();
+    this.map.easeTo({
+      center: [longitude, latitude],
+      zoom: Math.min(18, Math.max(17, this.map.getZoom() + 2)),
+      duration: 350,
+      essential: true,
+    });
   }
 
   private nearestIndex(latlng: [number, number]) { const distances = this.points().map(point => distanceBetween(point, latlng)); return distances.indexOf(Math.min(...distances)); }
